@@ -1,13 +1,11 @@
 package io.hankers.mp20;
 
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.NetworkInterface;
 import java.net.SocketException;
 
 import io.hankers.mp20.Models.ConnectIndication;
@@ -31,6 +29,8 @@ public class MonitorSniffer extends Thread {
 	            
 	            InetAddress address = packet.getAddress();
 	            int port = packet.getPort();
+	            
+	            System.out.format("Connection Indication from %s:%d", address.getHostAddress(), port);
 	            
 	            //NetworkInterface network = NetworkInterface.getByInetAddress("ip");
 	            //byte[] mac = network.getHardwareAddress();
