@@ -12,7 +12,12 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public class Models {
+
+	static final Logger logger = LogManager.getLogger(Models.class.getName());
 
 	// About unsigned byte
 	// https://stackoverflow.com/questions/4266756/can-we-make-unsigned-byte-in-java
@@ -277,6 +282,10 @@ public class Models {
 			value = convertToAttributeValue(buf, bigEndian);
 		}
 
+		public Object getValue() {
+			return value;
+		}
+
 		private Object convertToAttributeValue(byte[] value, boolean bigEndian) throws IOException {
 			Object ret = null;
 			switch (attribute_id.value()) {
@@ -286,12 +295,12 @@ public class Models {
 				break;
 
 			case DataConstants.NOM_ATTR_ID_LABEL:
-//                    ReadIDLabel(avaattribobjects);
+//              ReadIDLabel(avaattribobjects);
 				ret = b2ui(value, 0, bigEndian);
 				break;
 
 			case DataConstants.NOM_ATTR_NU_VAL_OBS:
-//                    ReadNumericObservationValue(avaattribobjects, timeModel, numericValResult);
+//              ReadNumericObservationValue(avaattribobjects, timeModel, numericValResult);
 				NuObsValue tmp = new NuObsValue();
 				InputStream ins = new ByteArrayInputStream(value);
 				tmp.read(ins, bigEndian);
@@ -300,7 +309,7 @@ public class Models {
 				break;
 
 			case DataConstants.NOM_ATTR_NU_CMPD_VAL_OBS:
-//                    ReadCompoundNumericObsValue(avaattribobjects, timeModel, numericValResult);
+//              ReadCompoundNumericObsValue(avaattribobjects, timeModel, numericValResult);
 				NuObsValueCmp tmp2 = new NuObsValueCmp();
 				InputStream ins2 = new ByteArrayInputStream(value);
 				tmp2.read(ins2, bigEndian);
@@ -312,17 +321,27 @@ public class Models {
 				break;
 
 			case DataConstants.NOM_ATTR_ID_LABEL_STRING:
-//                    ReadIDLabelString(avaattribobjects);
+//              ReadIDLabelString(avaattribobjects);
 				ret = new String(value, StandardCharsets.UTF_8);
 				break;
 
 			case DataConstants.NOM_ATTR_SA_VAL_OBS:
-//                    using (new PerformanceTimer("NOM_ATTR_SA_VAL_OBS"))
-//                        ReadWaveSaObservationValueObject(avaattribobjects, timeModel, waveValResult);
+//              using (new PerformanceTimer("NOM_ATTR_SA_VAL_OBS"))
+//              	ReadWaveSaObservationValueObject(avaattribobjects, timeModel, waveValResult);
+				SaObsValue saobsvalue = new SaObsValue();
+				InputStream ins3 = new ByteArrayInputStream(value);
+				saobsvalue.read(ins3, bigEndian);
+				ins3.close();
+				ret = saobsvalue;
 				break;
 
 			case DataConstants.NOM_ATTR_SA_CMPD_VAL_OBS:
-//                    ReadCompoundWaveSaObservationValue(avaattribobjects, timeModel, waveValResult);
+//              ReadCompoundWaveSaObservationValue(avaattribobjects, timeModel, waveValResult);
+				SaObsValueCmp saobsvalueCmp = new SaObsValueCmp();
+				InputStream ins4 = new ByteArrayInputStream(value);
+				saobsvalueCmp.read(ins4, bigEndian);
+				ins4.close();
+				ret = saobsvalueCmp;
 				break;
 
 			case DataConstants.NOM_ATTR_SA_SPECN:
@@ -588,7 +607,7 @@ public class Models {
 						relativeTime = java.nio.ByteBuffer.wrap(ava.buf)
 								.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
 					} else {
-						System.out.println("ERROR: invalid relative tiime");
+						logger.warn("ERROR: invalid relative tiime");
 					}
 				}
 			}
@@ -712,9 +731,9 @@ public class Models {
 			length.read(ins, bigEndian);
 			value = new ArrayList<SingleContextPoll>();
 			for (int i = 0; i < count.value(); i++) {
-				SingleContextPoll ava = new SingleContextPoll();
-				ava.read(ins, bigEndian);
-				value.add(ava);
+				SingleContextPoll scp = new SingleContextPoll();
+				scp.read(ins, bigEndian);
+				value.add(scp);
 			}
 		}
 
@@ -779,9 +798,9 @@ public class Models {
 			length.read(ins, bigEndian);
 			value = new ArrayList<ObservationPoll>();
 			for (int i = 0; i < count.value(); i++) {
-				ObservationPoll ava = new ObservationPoll();
-				ava.read(ins, bigEndian);
-				value.add(ava);
+				ObservationPoll op = new ObservationPoll();
+				op.read(ins, bigEndian);
+				value.add(op);
 			}
 		}
 
@@ -966,9 +985,9 @@ public class Models {
 			length.read(ins, bigEndian);
 			value = new ArrayList<NuObsValue>();
 			for (int i = 0; i < count.value(); i++) {
-				NuObsValue ava = new NuObsValue();
-				ava.read(ins, bigEndian);
-				value.add(ava);
+				NuObsValue nov = new NuObsValue();
+				nov.read(ins, bigEndian);
+				value.add(nov);
 			}
 		}
 
@@ -1129,6 +1148,66 @@ public class Models {
 			upper_scaled_value.write(ous, bigEndian);
 			increment.write(ous, bigEndian);
 			cal_type.write(ous, bigEndian);
+		}
+	}
+
+//typedef struct {
+//	OIDType	physio_id;
+//	MeasurementState state;
+//	struct {
+//		u_16 length;
+//		u_8 value[1];
+//	} array;
+//} SaObsValue;
+	public static class SaObsValue {
+		Ushort physio_id;
+		Ushort state;
+		Ushort length;
+		byte[] value;
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			physio_id.read(ins, bigEndian);
+			state.read(ins, bigEndian);
+			length.read(ins, bigEndian);
+			value = new byte[length.value()];
+			ins.read(value);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			physio_id.write(ous, bigEndian);
+			state.write(ous, bigEndian);
+			length.write(ous, bigEndian);
+			ous.write(value);
+		}
+	}
+
+//	typedef struct {
+//		u_16 count;
+//		u_16 length;
+//		SaObsValue value[1]; 
+//	} SaObsValueCmp;
+	public static class SaObsValueCmp {
+		Ushort count;
+		Ushort length;
+		List<SaObsValue> value;
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			count.read(ins, bigEndian);
+			length.read(ins, bigEndian);
+			value = new ArrayList<SaObsValue>();
+			for (int i = 0; i < count.value(); i++) {
+				SaObsValue tmp = new SaObsValue();
+				tmp.read(ins, bigEndian);
+				value.add(tmp);
+			}
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			count.write(ous, bigEndian);
+			length.write(ous, bigEndian);
+			for (int i = 0; i < count.value(); i++) {
+				value.get(i).write(ous, bigEndian);
+			}
 		}
 	}
 

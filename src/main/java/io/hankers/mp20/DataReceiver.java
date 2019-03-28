@@ -14,6 +14,8 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import io.hankers.mp20.Models.AVAType;
 import io.hankers.mp20.Models.MDSPollActionResult;
@@ -30,6 +32,7 @@ public class DataReceiver extends Thread {
 	private SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz");
 	private Thread _pollThread;
 	private boolean _bigEndian = true;
+	static final Logger logger = LogManager.getLogger(DataReceiver.class.getName());
 
 	public DataReceiver() throws SocketException, UnknownHostException {
 		_socket = new DatagramSocket();
@@ -55,9 +58,11 @@ public class DataReceiver extends Thread {
 					succeedToAssociate = false;
 					Thread.sleep(3000);
 					e.printStackTrace();
+					logger.error(e);
 				}
 			} catch (InterruptedException e) {
 				e.printStackTrace();
+				logger.error(e);
 				break;
 			}
 		}
@@ -77,13 +82,13 @@ public class DataReceiver extends Thread {
 		DatagramPacket receivePacket = new DatagramPacket(_buf, _buf.length);
 		_socket.receive(receivePacket);
 		String receivedSentence = new String(receivePacket.getData());
-		System.out.println("AssociationResult FROM SERVER:" + receivedSentence);
+		logger.debug("AssociationResult FROM SERVER:" + receivedSentence);
 
 		java.util.Arrays.fill(_buf, (byte) 0);
 
 		_socket.receive(receivePacket);
 		receivedSentence = new String(receivePacket.getData());
-		System.out.println("MDSCreateEventReport FROM SERVER:" + receivedSentence);
+		logger.debug("MDSCreateEventReport FROM SERVER:" + receivedSentence);
 
 		Models.MDSCreateEventReport mdsCreateEventReport = new Models.MDSCreateEventReport();
 		InputStream ins = new ByteArrayInputStream(_buf);
@@ -92,9 +97,9 @@ public class DataReceiver extends Thread {
 
 		_absoluteTime = mdsCreateEventReport.getAbsoluteTime();
 		long relativeTime = mdsCreateEventReport.getRelativeTime();
-		System.out.printf("MDS Date,abs=%s,rel=%d", _sdf.format(_absoluteTime.getDate()), relativeTime);
+		logger.debug("MDS Date,abs=%s,rel=%d", _sdf.format(_absoluteTime.getDate()), relativeTime);
 
-		System.out.printf(">>SendMDSCreateEventResult");
+		logger.debug(">>SendMDSCreateEventResult");
 		sendData = DataConstants.mds_create_resp_msg;
 		sendPacket = new DatagramPacket(sendData, sendData.length);
 		_socket.send(sendPacket);
@@ -138,12 +143,11 @@ public class DataReceiver extends Thread {
 
 					Thread.sleep(1000);
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
-					System.out.print(e);
+					logger.error(e);
 				} catch (InterruptedException e2) {
 					e2.printStackTrace();
-					System.out.print(e2);
+					logger.error(e2);
 				}
 			}
 		}
@@ -165,9 +169,8 @@ public class DataReceiver extends Thread {
 					Arrays.fill(_buf, (byte) 0);
 					_socket.receive(_revPacket);
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
-					System.out.print(e);
+					logger.error(e);
 				}
 			}
 		}
@@ -357,18 +360,6 @@ public class DataReceiver extends Thread {
 		DatagramPacket sendPkt = new DatagramPacket(finaltxbuff, finaltxbuff.length);
 		_socket.send(sendPkt);
 	}
-
-//    private Ushort readUShortStream(DataInputStream dis) throws IOException {
-//    	Ushort us = new Ushort();
-//    	us.read(dis, _bigEndian);
-//    	return us;
-//    }
-//
-//    private Uint readUInt32Stream(DataInputStream dis) throws IOException {
-//    	Uint ui = new Uint();
-//    	ui.read(dis, _bigEndian);
-//    	return ui;
-//    }
 
 	private void ProcessPacket(byte[] packetbuffer) throws IOException {
 		InputStream ins = new ByteArrayInputStream(_buf);
