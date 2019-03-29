@@ -52,7 +52,7 @@ public class Models {
 		private byte h;
 
 		public int value() {
-			return Byte.toUnsignedInt(h) << 8 + Byte.toUnsignedInt(l);
+			return (Byte.toUnsignedInt(h) << 8) + Byte.toUnsignedInt(l);
 		}
 
 		public void setValue(int i) {
@@ -88,7 +88,9 @@ public class Models {
 		private byte h;
 
 		public long value() {
-			return Byte.toUnsignedLong(h) << 24 + Byte.toUnsignedLong(mh) << 16 + Byte.toUnsignedLong(ml) << 8
+			return (Byte.toUnsignedLong(h) << 24) 
+					+ (Byte.toUnsignedLong(mh) << 16) 
+					+ (Byte.toUnsignedLong(ml) << 8)
 					+ Byte.toUnsignedLong(l);
 		}
 
@@ -146,7 +148,7 @@ public class Models {
 			}
 
 			int exponent = h;
-			int mantissa = mh << 16 + ml << 8 + l;
+			int mantissa = (mh << 16) + (ml << 8) + l;
 			value = mantissa * Math.pow((double) 10, (double) exponent);
 		}
 
@@ -166,7 +168,7 @@ public class Models {
 	}
 
 	public static class Nomenclature {
-		private Ushort magic;
+		private Ushort magic = new Ushort();
 		private byte major;
 		private byte minor;
 
@@ -184,8 +186,8 @@ public class Models {
 	}
 
 	public static class ROapdus {
-		Ushort ro_type;
-		Ushort length;
+		Ushort ro_type = new Ushort(); // ROIV_APDU 1, RORS_APDU 2, ROER_APDU 3, ROLRS_APDU 5
+		Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			ro_type.read(ins, bigEndian);
@@ -199,9 +201,9 @@ public class Models {
 	}
 
 	public static class ROIVapdu {
-		Ushort invoke_id;
-		Ushort command_type;
-		Ushort length;
+		Ushort invoke_id = new Ushort();
+		Ushort command_type = new Ushort();
+		Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			invoke_id.read(ins, bigEndian);
@@ -217,8 +219,8 @@ public class Models {
 	}
 
 	public static class GlbHandle {
-		private Ushort context_id;
-		private Ushort handle;
+		private Ushort context_id = new Ushort();
+		private Ushort handle = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			context_id.read(ins, bigEndian);
@@ -231,9 +233,9 @@ public class Models {
 		}
 	}
 
-	public static class ManagedObjectId {
-		private Ushort obj_class;
-		private GlbHandle obj_inst;
+	public static class ManagedObjectId { // 6 bytes
+		private Ushort obj_class = new Ushort();
+		private GlbHandle obj_inst = new GlbHandle(); // 4 bytes
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			obj_class.read(ins, bigEndian);
@@ -246,11 +248,24 @@ public class Models {
 		}
 	}
 
-	public static class EventReportArgument {
-		private ManagedObjectId managed_object;
-		private Uint relative_time;
-		private Ushort event_type;
-		private Ushort length;
+//	typedef struct {
+//		ManagedObjectId managed_object;
+//		AttributeList attributeList;
+//	} GetResult;
+//	typedef struct {
+//		ManagedObjectId managed_object; 
+//		AttributeList attributeList;
+//	} SetResult;
+	public static class GetResult {
+		ManagedObjectId managed_object = new ManagedObjectId();
+		AttributeList attributeList = new AttributeList();
+	}
+
+	public static class EventReportArgument { // 14 bytes
+		private ManagedObjectId managed_object = new ManagedObjectId(); // 6 bytes
+		private Uint relative_time = new Uint();
+		private Ushort event_type = new Ushort();
+		private Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			managed_object.read(ins, bigEndian);
@@ -268,8 +283,8 @@ public class Models {
 	}
 
 	public static class AVAType {
-		Ushort attribute_id;
-		Ushort length; // length in bytes
+		Ushort attribute_id = new Ushort();
+		Ushort length = new Ushort(); // length in bytes
 		byte[] buf;
 		private Object value;
 
@@ -370,37 +385,41 @@ public class Models {
 		}
 	}
 
-	public static class AttributeList {
-		private Ushort count;
-		private Ushort length; // length in bytes
+	public static class AttributeList { // 4+length bytes
+		private Ushort count = new Ushort();
+		private Ushort length = new Ushort(); // length in bytes
 		private ArrayList<AVAType> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
-			length.read(ins, bigEndian);
-			value = new ArrayList<AVAType>();
-			for (int i = 0; i < count.value(); i++) {
-				AVAType ava = new AVAType();
-				ava.read(ins, bigEndian);
-				value.add(ava);
+			if (count.value() > 0) {
+				length.read(ins, bigEndian);
+				value = new ArrayList<AVAType>();
+				for (int i = 0; i < count.value(); i++) {
+					AVAType ava = new AVAType();
+					ava.read(ins, bigEndian);
+					value.add(ava);
+				}
 			}
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
 			count.write(ous, bigEndian);
-			length.write(ous, bigEndian);
-			for (int i = 0; i < count.value(); i++) {
-				value.get(i).write(ous, bigEndian);
+			if (count.value() > 0) {
+				length.write(ous, bigEndian);
+				for (int i = 0; i < count.value(); i++) {
+					value.get(i).write(ous, bigEndian);
+				}
 			}
 		}
 	}
 
 	public static class ConnectIndication {
-		private Nomenclature nomenclature;
-		private ROapdus roapdus;
-		private ROIVapdu roivapdu;
-		private EventReportArgument eventReportArgument;
-		private AttributeList connectIndInfo;
+		private Nomenclature nomenclature = new Nomenclature();
+		private ROapdus roapdus = new ROapdus();
+		private ROIVapdu roivapdu = new ROIVapdu();
+		private EventReportArgument eventReportArgument = new EventReportArgument();
+		private AttributeList connectIndInfo = new AttributeList();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			nomenclature.read(ins, bigEndian);
@@ -448,7 +467,7 @@ public class Models {
 	}
 
 	// BCD encoded, decimal 99 coded as 0x99, 0xff as invalid
-	public static class AbsoluteTime {
+	public static class AbsoluteTime { // 8 bytes
 		private byte century;
 		private byte year;
 		private byte month;
@@ -471,7 +490,13 @@ public class Models {
 			sec_fractions = (byte) ins.read();
 
 			Calendar c = Calendar.getInstance();
-			c.set(century * 100 + year, month - 1, day, hour, minute, second);
+			c.set(Integer.parseInt(Integer.toHexString(century), 10) * 100 
+					+ Integer.parseInt(Integer.toHexString(year), 10), 
+					Integer.parseInt(Integer.toHexString(month), 10) - 1, 
+					Integer.parseInt(Integer.toHexString(day), 10), 
+					Integer.parseInt(Integer.toHexString(hour), 10), 
+					Integer.parseInt(Integer.toHexString(minute), 10), 
+					Integer.parseInt(Integer.toHexString(second), 10));
 			date = c.getTime();
 		}
 
@@ -540,8 +565,8 @@ public class Models {
 	}
 
 	public static class SPpdu {
-		private Ushort session_id;
-		private Ushort p_context_id;
+		private Ushort session_id = new Ushort(); // 0xE1 0x00
+		private Ushort p_context_id = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			session_id.read(ins, bigEndian);
@@ -556,11 +581,11 @@ public class Models {
 
 	// typedef struct {
 	// ManagedObjectId managed_object;
-	// AttributeList attribute_list;
+	// AttributeList attribute_list = new AttributeList();
 	// } MdsCreateInfo;
 	public static class MdsCreateInfo {
-		private ManagedObjectId managed_object;
-		private AttributeList attribute_list;
+		private ManagedObjectId managed_object = new ManagedObjectId();
+		private AttributeList attribute_list = new AttributeList();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			managed_object.read(ins, bigEndian);
@@ -580,11 +605,11 @@ public class Models {
 	// <EventReportArgument (event_type := NOM_NOTI_MDS_CREAT)>
 	// <MDSCreateInfo>
 	public static class MDSCreateEventReport {
-		private SPpdu sppdu;
-		private ROapdus roapdus;
-		private ROIVapdu roivapdu;
-		private EventReportArgument eventReportArgument;
-		private MdsCreateInfo mdsCreateInfo;
+		private SPpdu sppdu = new SPpdu();
+		private ROapdus roapdus = new ROapdus();
+		private ROIVapdu roivapdu = new ROIVapdu();
+		private EventReportArgument eventReportArgument = new EventReportArgument();
+		private MdsCreateInfo mdsCreateInfo = new MdsCreateInfo();
 		private AbsoluteTime absoluteTime;
 		private long relativeTime;
 
@@ -595,17 +620,21 @@ public class Models {
 			eventReportArgument.read(ins, bigEndian);
 			mdsCreateInfo.read(ins, bigEndian);
 
-			for (int i = 0; i < mdsCreateInfo.attribute_list.count.value(); i++) {
+			int count = mdsCreateInfo.attribute_list.count.value();
+			for (int i = 0; i < count; i++) {
 				AVAType ava = mdsCreateInfo.attribute_list.value.get(i);
 				if (ava.attribute_id.value() == DataConstants.NOM_ATTR_TIME_ABS) {
 					absoluteTime = new AbsoluteTime();
 					InputStream instream = new ByteArrayInputStream(ava.buf);
 					absoluteTime.read(instream);
 					ins.close();
+					System.out.println("AbsoluteTime=" + absoluteTime.getDate());
+					logger.info("AbsoluteTime=" + absoluteTime.getDate());
 				} else if (ava.attribute_id.value() == DataConstants.NOM_ATTR_TIME_REL) {
 					if (ava.length.value() == 4) {
 						relativeTime = java.nio.ByteBuffer.wrap(ava.buf)
 								.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
+						logger.debug("relativeTime=" + relativeTime);
 					} else {
 						logger.warn("ERROR: invalid relative tiime");
 					}
@@ -641,9 +670,15 @@ public class Models {
 	// u_16 length; /* no of bytes in rest of message */
 	// } RORSapdu;
 	public static class RORSapdu {
-		Ushort invoke_id;
-		Ushort command_type;
-		Ushort length;
+		Ushort invoke_id = new Ushort();
+		Ushort command_type = new Ushort();
+							// CMD_EVENT_REPORT 0, 
+							// CMD_CONFIRMED_EVENT_REPORT 1, 
+							// CMD_GET 3, 
+							// CMD_SET 4,
+							// CMD_CONFIRMED_SET 5, 
+							// CMD_CONFIRMED_ACTION 7
+		Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			invoke_id.read(ins, bigEndian);
@@ -659,14 +694,63 @@ public class Models {
 	}
 
 	// typedef struct {
+	// u_8 state;
+	// //define RORLS_FIRST 1 /* set in the first message */
+	// //define RORLS_NOT_FIRST_NOT_LAST 2
+	// //define RORLS_LAST 3 /* last RORLSapdu, one RORSapdu to follow */
+	// u_8 count; /* counter starts with 1 */
+	// } RorlsId;
+	public static class RorlsId {
+		Ubyte state = new Ubyte();
+		Ubyte count = new Ubyte();
+
+		public void read(InputStream ins) throws IOException {
+			state.read(ins);
+			count.read(ins);
+		}
+
+		public void write(DataOutputStream ous) throws IOException {
+			state.write(ous);
+			count.write(ous);
+		}
+	}
+
+// typedef struct {
+// 		RorlsId linked_id; /* see below */
+// 		u_16 invoke_id; /* see below */
+// 		CMD_Type command_type;
+// 		u_16 length;
+// } ROLRSapdu;
+	public static class ROLRSapdu {
+		RorlsId linked_id = new RorlsId();
+		Ushort invoke_id = new Ushort();
+		Ushort command_type = new Ushort();
+		Ushort length = new Ushort();
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			linked_id.read(ins);
+			invoke_id.read(ins, bigEndian);
+			command_type.read(ins, bigEndian);
+			length.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			linked_id.write(ous);
+			invoke_id.write(ous, bigEndian);
+			command_type.write(ous, bigEndian);
+			length.write(ous, bigEndian);
+		}
+	}
+
+	// typedef struct {
 	// ManagedObjectId managed_object;
 	// OIDType action_type; /* identification of method */
 	// u_16 length; /* size of appended data */
 	// } ActionResult;
-	public static class ActionResult {
-		ManagedObjectId managed_object;
-		Ushort action_type; // NOM_ACT_POLL_MDIB_DATA NOM_ACT_POLL_MDIB_DATA_EXT
-		Ushort length;
+	public static class ActionResult { // 10 bytes
+		ManagedObjectId managed_object = new ManagedObjectId(); // 6 bytes
+		Ushort action_type = new Ushort(); // NOM_ACT_POLL_MDIB_DATA 0x0c 0x16, NOM_ACT_POLL_MDIB_DATA_EXT 0xf1 0x3b
+		Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			managed_object.read(ins, bigEndian);
@@ -681,21 +765,47 @@ public class Models {
 		}
 	}
 
-	// typedef struct {
-	// u_16 poll_number;
-	// RelativeTime rel_time_stamp;
-	// AbsoluteTime abs_time_stamp;
-	// TYPE polled_obj_type;
-	// OIDType polled_attr_grp;
-	// PollInfoList poll_info_list;
-	// } PollMdibDataReply;
-	public static class PollMdibDataReply {
-		Ushort poll_number;
-		Uint rel_time_stamp;
-		AbsoluteTime abs_time_stamp;
-		Ushort polled_obj_type;
-		Ushort polled_attr_grp;
-		PollInfoList poll_info_list;
+// typedef struct {
+//   NomPartition    partition;
+//                              /*
+//                               #define NOM_PART_OBJ          1
+//                               #define NOM_PART_SCADA        2
+//                               #define NOM_PART_EVT          3
+//                               #define NOM_PART_DIM          4
+//                               #define NOM_PART_PGRP         6
+//                               #define NOM_PART_INFRASTRUCT  8 */
+//   OIDType         code;
+// } TYPE;
+	public static class TYPE {
+		Ushort partition = new Ushort();
+		Ushort code = new Ushort();
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			partition.read(ins, bigEndian);
+			code.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			partition.write(ous, bigEndian);
+			code.write(ous, bigEndian);
+		}
+	}
+
+// typedef struct {
+// 		u_16 poll_number;
+// 		RelativeTime rel_time_stamp;
+// 		AbsoluteTime abs_time_stamp;
+// 		TYPE polled_obj_type;
+// 		OIDType polled_attr_grp;
+// 		PollInfoList poll_info_list;
+// } PollMdibDataReply;
+	public static class PollMdibDataReply { // 24+
+		Ushort poll_number = new Ushort();
+		Uint rel_time_stamp = new Uint();
+		AbsoluteTime abs_time_stamp = new AbsoluteTime(); // 8 bytes
+		TYPE polled_obj_type = new TYPE(); // 4 bytes, skip 16 bytes to code
+		Ushort polled_attr_grp = new Ushort();
+		PollInfoList poll_info_list = new PollInfoList(); // 4+length bytes
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			poll_number.read(ins, bigEndian);
@@ -721,9 +831,9 @@ public class Models {
 	// u_16 length;
 	// SingleContextPoll value[1];
 	// } PollInfoList;
-	public static class PollInfoList {
-		Ushort count;
-		Ushort length;
+	public static class PollInfoList { // 4+length bytes
+		Ushort count = new Ushort();
+		Ushort length = new Ushort();
 		List<SingleContextPoll> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -751,8 +861,8 @@ public class Models {
 	// AttributeList attributes;
 	// } ObservationPoll;
 	public static class ObservationPoll {
-		Ushort obj_handle;
-		AttributeList attributes;
+		Ushort obj_handle = new Ushort();
+		AttributeList attributes = new AttributeList();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			obj_handle.read(ins, bigEndian);
@@ -765,17 +875,17 @@ public class Models {
 		}
 	}
 
-	// typedef struct {
-	// MdsContext context_id;
-	// struct {
-	// u_16 count;
-	// u_16 length;
-	// ObservationPoll value[1];
-	// } poll_info;
-	// } SingleContextPoll;
+// typedef struct {
+// 		MdsContext context_id;
+// 		struct {
+// 			u_16 count;
+// 			u_16 length;
+// 			ObservationPoll value[1];
+// 		} poll_info;
+// } SingleContextPoll;
 	public static class SingleContextPoll {
-		Ushort context_id;
-		PollInfo poll_info;
+		Ushort context_id = new Ushort();
+		PollInfo poll_info = new PollInfo();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			context_id.read(ins, bigEndian);
@@ -789,8 +899,8 @@ public class Models {
 	}
 
 	public static class PollInfo {
-		Ushort count;
-		Ushort length;
+		Ushort count = new Ushort();
+		Ushort length = new Ushort();
 		List<ObservationPoll> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -823,6 +933,166 @@ public class Models {
 		return ui;
 	}
 
+//   typedef struct {
+//     ManagedObjectId managed_object;/* addressed object */
+//     u_32 scope;/* fixed value 0 */
+//     OIDType action_type; /* identification of method 
+//                           #define NOM_ACT_POLL_MDIB_DATA     3094  0x0c 0x16
+//                           #define NOM_ACT_POLL_MDIB_DATA_EXT 61755 0xf1 0x3b */
+//     u_16           length;        /* size of appended data */
+//  } ActionArgument;
+	public static class ActionArgument { // 14 bytes
+		ManagedObjectId managed_object = new ManagedObjectId(); // 6 bytes
+		Uint scope = new Uint();
+		Ushort action_type = new Ushort();
+		Ushort length = new Ushort();
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			managed_object.read(ins, bigEndian);
+			scope.read(ins, bigEndian);
+			action_type.read(ins, bigEndian);
+			length.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			managed_object.write(ous, bigEndian);
+			scope.write(ous, bigEndian);
+			action_type.write(ous, bigEndian);
+			length.write(ous, bigEndian);
+		}
+	}
+
+// typedef struct{
+//   u_16           poll_number;
+//   TYPE           polled_obj_type;
+//   OIDType        polled_attr_grp;
+// } PollMdibDataReq;
+	public static class PollMdibDataReq { // 8 bytes
+		Ushort poll_number = new Ushort();
+		TYPE polled_obj_type = new TYPE(); // 4 bytes
+		Ushort polled_attr_grp = new Ushort();
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			poll_number.read(ins, bigEndian);
+			polled_obj_type.read(ins, bigEndian);
+			polled_attr_grp.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			poll_number.write(ous, bigEndian);
+			polled_obj_type.write(ous, bigEndian);
+			polled_attr_grp.write(ous, bigEndian);
+		}
+	}
+
+// MDSPollAction ::=
+//    <SPpdu>
+//    <ROapdus (ro_type := ROIV_APDU)>
+//    <ROIVapdu (command_type := CMD_CONFIRMED_ACTION)>
+//    <ActionArgument (managed_object := {NOM_MOC_VMS_MDS, 0, 0},
+//                    action_type := NOM_ACT_POLL_MDIB_DATA)>
+//    <PollMdibDataReq>  
+	public static class SimplePollRequest { // 36 bytes
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private ROIVapdu roivapdu = new ROIVapdu(); // 6 bytes
+		private ActionArgument actionArgument = new ActionArgument(); // 14 bytes
+		private PollMdibDataReq pollMdibDataReq = new PollMdibDataReq(); // 8 bytes
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			sppdu.read(ins, bigEndian);
+			roapdus.read(ins, bigEndian);
+			roivapdu.read(ins, bigEndian);
+			actionArgument.read(ins, bigEndian);
+			pollMdibDataReq.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			sppdu.write(ous, bigEndian);
+			roapdus.write(ous, bigEndian);
+			roivapdu.write(ous, bigEndian);
+			actionArgument.write(ous, bigEndian);
+			pollMdibDataReq.write(ous, bigEndian);
+		}
+
+		public static boolean isValidType(byte[] buf, boolean bigEndian) {
+			int ro_type = b2us(buf, 4, bigEndian);
+			int action_type = b2us(buf, 24, bigEndian);
+			return ro_type == DataConstants.ROIV_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA;
+		}
+	}
+
+// typedef struct{
+//   u_16           poll_number;
+//   TYPE           polled_obj_type;
+//   OIDType        polled_attr_grp;
+//   AttributeList  poll_ext_attr;
+// } PollMdibDataReqExt;
+	public static class PollMdibDataReqExt { // 12+ bytes
+		Ushort poll_number = new Ushort();
+		TYPE polled_obj_type = new TYPE(); // 4 bytes
+		Ushort polled_attr_grp = new Ushort();
+		AttributeList poll_ext_attr = new AttributeList(); // 4+length bytes
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			poll_number.read(ins, bigEndian);
+			polled_obj_type.read(ins, bigEndian);
+			polled_attr_grp.read(ins, bigEndian);
+			poll_ext_attr.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			poll_number.write(ous, bigEndian);
+			polled_obj_type.write(ous, bigEndian);
+			polled_attr_grp.write(ous, bigEndian);
+			poll_ext_attr.write(ous, bigEndian);
+		}
+	}
+
+// MDSPollAction ::=
+//     <SPpdu>
+//     <ROapdus (ro_type := ROIV_APDU)>
+//     <ROIVapdu (command_type := CMD_CONFIRMED_ACTION)>
+//     <ActionArgument
+//       (managed_object := {NOM_MOC_VMS_MDS, 0, 0},
+//       action_type := NOM_ACT_POLL_MDIB_DATA_EXT)>
+//     <PollMdibDataReqExt>
+	public static class ExtPollRequest { // 40+ bytes
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private ROIVapdu roivapdu = new ROIVapdu(); // 6 bytes
+		private ActionArgument actionArgument = new ActionArgument(); // 14 bytes
+		private PollMdibDataReqExt pollMdibDataReqExt = new PollMdibDataReqExt(); // 12+ bytes
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			sppdu.read(ins, bigEndian);
+			roapdus.read(ins, bigEndian);
+			roivapdu.read(ins, bigEndian);
+			actionArgument.read(ins, bigEndian);
+			pollMdibDataReqExt.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			sppdu.write(ous, bigEndian);
+			roapdus.write(ous, bigEndian);
+			roivapdu.write(ous, bigEndian);
+			actionArgument.write(ous, bigEndian);
+			pollMdibDataReqExt.write(ous, bigEndian);
+		}
+
+		public static boolean isValidType(byte[] buf, boolean bigEndian) {
+			int ro_type = b2us(buf, 4, bigEndian);
+			int action_type = b2us(buf, 24, bigEndian);
+			return ro_type == DataConstants.ROIV_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA_EXT;
+		}
+
+		public static boolean isWave(byte[] buf, boolean bigEndian) {
+			int polled_obj_type_code = b2us(buf, 32, bigEndian);
+			return isValidType(buf, bigEndian)
+					&& polled_obj_type_code == DataConstants.ObjectClasses.NOM_MOC_VMO_METRIC_SA_RT.getValue();
+		}
+	}
+
 //	MDSPollActionResult ::=
 //            <SPpdu>
 //            <ROapdus (ro_type := RORS_APDU)>
@@ -832,12 +1102,12 @@ public class Models {
 //              (managed_object := {NOM_MOC_VMS_MDS, 0, 0},
 //               action_type := NOM_ACT_POLL_MDIB_DATA)>
 //            <PollMdibDataReply>
-	public static class MDSPollActionResult {
-		private SPpdu sppdu; // 4 bytes
-		private ROapdus roapdus; // 4 bytes
-		private RORSapdu rorsapdu; // 6 bytes
-		private ActionResult actionResult; // 10 bytes
-		private PollMdibDataReply pollMdibDataReply;
+	public static class MDSPollActionResult { // 48+
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private RORSapdu rorsapdu = new RORSapdu(); // 6 bytes
+		private ActionResult actionResult = new ActionResult(); // 10 bytes
+		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			sppdu.read(ins, bigEndian);
@@ -860,6 +1130,52 @@ public class Models {
 			int action_type = b2us(buf, 20, bigEndian);
 			return ro_type == DataConstants.RORS_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA;
 		}
+
+		public static boolean isWave(byte[] buf, boolean bigEndian) {
+			if (buf.length >= 48 && isValidType(buf, bigEndian)) {
+				int polled_obj_type_code = b2us(buf, 40, bigEndian);
+				return polled_obj_type_code == DataConstants.ObjectClasses.NOM_MOC_VMO_METRIC_SA_RT.getValue();
+			}
+			return false;
+		}
+	}
+
+	public static class MDSPollActionResultLinked { // 48+
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private ROLRSapdu rolrsapdu = new ROLRSapdu(); // 8 bytes
+		private ActionResult actionResult = new ActionResult(); // 10 bytes
+		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			sppdu.read(ins, bigEndian);
+			roapdus.read(ins, bigEndian);
+			rolrsapdu.read(ins, bigEndian);
+			actionResult.read(ins, bigEndian);
+			pollMdibDataReply.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			sppdu.write(ous, bigEndian);
+			roapdus.write(ous, bigEndian);
+			rolrsapdu.write(ous, bigEndian);
+			actionResult.write(ous, bigEndian);
+			pollMdibDataReply.write(ous, bigEndian);
+		}
+
+		public static boolean isValidType(byte[] buf, boolean bigEndian) {
+			int ro_type = b2us(buf, 4, bigEndian);
+			int action_type = b2us(buf, 20, bigEndian);
+			return ro_type == DataConstants.RORS_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA;
+		}
+
+		public static boolean isWave(byte[] buf, boolean bigEndian) {
+			if (buf.length >= 48 && isValidType(buf, bigEndian)) {
+				int polled_obj_type_code = b2us(buf, 42, bigEndian);
+				return polled_obj_type_code == DataConstants.ObjectClasses.NOM_MOC_VMO_METRIC_SA_RT.getValue();
+			}
+			return false;
+		}
 	}
 
 //	typedef struct PollMdibDataReplyExt {
@@ -871,14 +1187,14 @@ public class Models {
 //	    OIDType 		polled_attr_grp
 //	    PollInfoList 	poll_info_list
 //	} PollMdibDataReplyExt;
-	public static class PollMdibDataReplyExt {
-		Ushort poll_number;
-		Ushort sequence_no;
-		Uint rel_time_stamp;
-		AbsoluteTime abs_time_stamp;
-		Ushort polled_obj_type;
-		Ushort polled_attr_grp;
-		PollInfoList poll_info_list;
+	public static class PollMdibDataReplyExt { // 26+, skip 18 bytes to code
+		Ushort poll_number = new Ushort();
+		Ushort sequence_no = new Ushort();
+		Uint rel_time_stamp = new Uint();
+		AbsoluteTime abs_time_stamp = new AbsoluteTime(); // 8
+		TYPE polled_obj_type = new TYPE(); // 4, skip 18 bytes to code
+		Ushort polled_attr_grp = new Ushort();
+		PollInfoList poll_info_list = new PollInfoList(); // 4+
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			poll_number.read(ins, bigEndian);
@@ -910,19 +1226,19 @@ public class Models {
 //		        (managed_object := {NOM_MOC_VMS_MDS, 0, 0},
 //		         action_type := NOM_ACT_POLL_MDIB_DATA_EXT)>
 //		     <PollMdibDataReplyExt>
-	public static class MDSPollActionResultExt {
-		private SPpdu sppdu; // 4 bytes
-		private ROapdus roapdus; // 4 bytes
-		private RORSapdu rorsapdu; // 6 bytes
-		private ActionResult actionResult; // 10 bytes
-		private PollMdibDataReply pollMdibDataReply;
+	public static class MDSPollActionResultExt { // 50+
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private RORSapdu rorsapdu = new RORSapdu(); // 6 bytes
+		private ActionResult actionResult = new ActionResult(); // 10 bytes
+		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rorsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
-			pollMdibDataReply.read(ins, bigEndian);
+			pollMdibDataReplyExt.read(ins, bigEndian);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -930,13 +1246,59 @@ public class Models {
 			roapdus.write(ous, bigEndian);
 			rorsapdu.write(ous, bigEndian);
 			actionResult.write(ous, bigEndian);
-			pollMdibDataReply.write(ous, bigEndian);
+			pollMdibDataReplyExt.write(ous, bigEndian);
+		}
+
+		public static boolean isValidType(byte[] buf, boolean bigEndian) {
+			int ro_type = b2us(buf, 4, bigEndian);
+			int action_type = b2us(buf, 20, bigEndian); // skip 20 bytes
+			return ro_type == DataConstants.RORS_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA_EXT;
+		}
+
+		public static boolean isWave(byte[] buf, boolean bigEndian) {
+			if (buf.length >= 50 && isValidType(buf, bigEndian)) {
+				int polled_obj_type_code = b2us(buf, 42, bigEndian);
+				return polled_obj_type_code == DataConstants.ObjectClasses.NOM_MOC_VMO_METRIC_SA_RT.getValue();
+			}
+			return false;
+		}
+	}
+
+	public static class MDSPollActionResultExtLinked { // 52+
+		private SPpdu sppdu = new SPpdu(); // 4 bytes
+		private ROapdus roapdus = new ROapdus(); // 4 bytes
+		private ROLRSapdu rolrsapdu = new ROLRSapdu(); // 8 bytes
+		private ActionResult actionResult = new ActionResult(); // 10 bytes
+		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			sppdu.read(ins, bigEndian);
+			roapdus.read(ins, bigEndian);
+			rolrsapdu.read(ins, bigEndian);
+			actionResult.read(ins, bigEndian);
+			pollMdibDataReplyExt.read(ins, bigEndian);
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			sppdu.write(ous, bigEndian);
+			roapdus.write(ous, bigEndian);
+			rolrsapdu.write(ous, bigEndian);
+			actionResult.write(ous, bigEndian);
+			pollMdibDataReplyExt.write(ous, bigEndian);
 		}
 
 		public static boolean isValidType(byte[] buf, boolean bigEndian) {
 			int ro_type = b2us(buf, 4, bigEndian);
 			int action_type = b2us(buf, 22, bigEndian); // skip 22 bytes
-			return ro_type == DataConstants.RORS_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA_EXT;
+			return ro_type == DataConstants.RORLS_APDU && action_type == DataConstants.NOM_ACT_POLL_MDIB_DATA_EXT;
+		}
+
+		public static boolean isWave(byte[] buf, boolean bigEndian) {
+			if (buf.length >= 52 && isValidType(buf, bigEndian)) {
+				int polled_obj_type_code = b2us(buf, 44, bigEndian);
+				return polled_obj_type_code == DataConstants.ObjectClasses.NOM_MOC_VMO_METRIC_SA_RT.getValue();
+			}
+			return false;
 		}
 	}
 
@@ -947,10 +1309,10 @@ public class Models {
 //	    FLOATType value; // uint32
 //	} NuObsValue;
 	public static class NuObsValue {
-		Ushort physio_id;
-		Ushort state; // eg: DEMO_DATA
-		Ushort unit_code;
-		Float32 value;
+		Ushort physio_id = new Ushort();
+		Ushort state = new Ushort(); // eg: DEMO_DATA
+		Ushort unit_code = new Ushort();
+		Float32 value = new Float32();
 		String physio_str;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -976,8 +1338,8 @@ public class Models {
 //        NuObsValue     value[1];
 //    } NuObsValueCmp;
 	public static class NuObsValueCmp {
-		Ushort count;
-		Ushort length; // eg: DEMO_DATA
+		Ushort count = new Ushort();
+		Ushort length = new Ushort(); // eg: DEMO_DATA
 		List<NuObsValue> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -1039,8 +1401,8 @@ public class Models {
 //    	u_8 significant_bits;
 //    } SampleType;
 	public static class SampleType {
-		Ubyte sample_size;
-		Ubyte significant_bits;
+		Ubyte sample_size = new Ubyte();
+		Ubyte significant_bits = new Ubyte();
 
 		public void read(InputStream ins) throws IOException {
 			sample_size.read(ins);
@@ -1060,9 +1422,9 @@ public class Models {
 //        SaFlags flags;
 // } SaSpec;
 	public static class SaSpec {
-		Ushort array_size;
-		SampleType sample_type;
-		Ushort flags;
+		Ushort array_size = new Ushort();
+		SampleType sample_type = new SampleType();
+		Ushort flags = new Ushort();
 
 		// SaFlags
 		public static final int SMOOTH_CURVE = 0x8000;
@@ -1090,10 +1452,10 @@ public class Models {
 //    	u_16 upper_scaled_value;
 //    } ScaleRangeSpec16;
 	public static class ScaleRangeSpec16 {
-		Float32 lower_absolute_value;
-		Float32 upper_absolute_value;
-		Ushort lower_scaled_value;
-		Ushort upper_scaled_value;
+		Float32 lower_absolute_value = new Float32();
+		Float32 upper_absolute_value = new Float32();
+		Ushort lower_scaled_value = new Ushort();
+		Ushort upper_scaled_value = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			lower_absolute_value.read(ins, bigEndian);
@@ -1121,12 +1483,12 @@ public class Models {
 //#define STAIR 1
 //} SaCalData16;
 	public static class SaCalData16 {
-		Float32 lower_absolute_value;
-		Float32 upper_absolute_value;
-		Ushort lower_scaled_value;
-		Ushort upper_scaled_value;
-		Ushort increment;
-		Ushort cal_type;
+		Float32 lower_absolute_value = new Float32();
+		Float32 upper_absolute_value = new Float32();
+		Ushort lower_scaled_value = new Ushort();
+		Ushort upper_scaled_value = new Ushort();
+		Ushort increment = new Ushort();
+		Ushort cal_type = new Ushort();
 
 		// Cal_Type
 		public static final int BAR = 0;
@@ -1160,9 +1522,9 @@ public class Models {
 //	} array;
 //} SaObsValue;
 	public static class SaObsValue {
-		Ushort physio_id;
-		Ushort state;
-		Ushort length;
+		Ushort physio_id = new Ushort();
+		Ushort state = new Ushort();
+		Ushort length = new Ushort();
 		byte[] value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -1187,8 +1549,8 @@ public class Models {
 //		SaObsValue value[1]; 
 //	} SaObsValueCmp;
 	public static class SaObsValueCmp {
-		Ushort count;
-		Ushort length;
+		Ushort count = new Ushort();
+		Ushort length = new Ushort();
 		List<SaObsValue> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {

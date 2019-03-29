@@ -20,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import io.hankers.mp20.Models.AVAType;
 import io.hankers.mp20.Models.MDSPollActionResult;
 import io.hankers.mp20.Models.MDSPollActionResultExt;
+import io.hankers.mp20.Models.MDSPollActionResultExtLinked;
 import io.hankers.mp20.Models.ROIVapdu;
 import io.hankers.mp20.Models.ROapdus;
 
@@ -36,7 +37,7 @@ public class DataReceiver extends Thread {
 
 	public DataReceiver() throws SocketException, UnknownHostException {
 		_socket = new DatagramSocket();
-		ADDR = InetAddress.getByName("192.168.1.66");
+		ADDR = InetAddress.getByName("222.66.154.80");
 	}
 
 	public void run() {
@@ -91,7 +92,7 @@ public class DataReceiver extends Thread {
 		logger.debug("MDSCreateEventReport FROM SERVER:" + receivedSentence);
 
 		Models.MDSCreateEventReport mdsCreateEventReport = new Models.MDSCreateEventReport();
-		InputStream ins = new ByteArrayInputStream(_buf);
+		InputStream ins = new ByteArrayInputStream(_buf, 0, receivePacket.getLength());
 		mdsCreateEventReport.read(ins, true);
 		ins.close();
 
@@ -368,6 +369,9 @@ public class DataReceiver extends Thread {
 			result.read(ins, _bigEndian);
 		} else if (MDSPollActionResultExt.isValidType(packetbuffer, _bigEndian)) {
 			MDSPollActionResultExt resultEx = new MDSPollActionResultExt();
+			resultEx.read(ins, _bigEndian);
+		} else if (MDSPollActionResultExtLinked.isValidType(packetbuffer, _bigEndian)) {
+			MDSPollActionResultExtLinked resultEx = new MDSPollActionResultExtLinked();
 			resultEx.read(ins, _bigEndian);
 		}
 		ins.close();

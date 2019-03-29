@@ -986,16 +986,16 @@ public class DataConstants {
 		// REMOTE DISPLAY
 
 		// declaring private variable for getting values
-		private short v;
+		private int v;
 
 		// getter method
-		public short getValue() {
+		public int getValue() {
 			return this.v;
 		}
 
 		// enum constructor - cannot be public or protected
 		private ObjectClasses(int value) {
-			this.v = (short) value;
+			this.v = value;
 		}
 
 	}
