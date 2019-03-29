@@ -16,9 +16,7 @@ public class App {
 
 	public static void main(String[] args) {
 		Properties props = System.getProperties();
-		System.out.println("Current working directory is " + props.getProperty("user.dir"));
-//		PropertyConfigurator.configure("log4j.properties");
-		logger.debug("Hello World!");
+		logger.debug("Hello World! Current working directory is " + props.getProperty("user.dir"));
 		try {
 			new DataReceiver().start();
 		} catch (SocketException e) {

@@ -37,7 +37,7 @@ public class DataReceiver extends Thread {
 
 	public DataReceiver() throws SocketException, UnknownHostException {
 		_socket = new DatagramSocket();
-		ADDR = InetAddress.getByName("222.66.154.80");
+		ADDR = InetAddress.getByName("127.0.0.1");
 	}
 
 	public void run() {
@@ -54,7 +54,7 @@ public class DataReceiver extends Thread {
 					Arrays.fill(_buf, (byte) 0);
 					_socket.receive(packet);
 
-					ProcessPacket(_buf);
+					ProcessPacket(_buf, packet.getLength());
 				} catch (IOException e) {
 					succeedToAssociate = false;
 					Thread.sleep(3000);
@@ -98,7 +98,7 @@ public class DataReceiver extends Thread {
 
 		_absoluteTime = mdsCreateEventReport.getAbsoluteTime();
 		long relativeTime = mdsCreateEventReport.getRelativeTime();
-		logger.debug("MDS Date,abs=%s,rel=%d", _sdf.format(_absoluteTime.getDate()), relativeTime);
+		logger.debug("MDS Date,abs={},rel={}", _sdf.format(_absoluteTime.getDate()), relativeTime);
 
 		logger.debug(">>SendMDSCreateEventResult");
 		sendData = DataConstants.mds_create_resp_msg;
@@ -122,7 +122,7 @@ public class DataReceiver extends Thread {
 
 	public static class PollRequestThread extends Thread {
 		private DatagramSocket _socket;
-		private DatagramPacket dataPollPacket, wavePollPacket, heartbeatPacket;
+		private DatagramPacket dataPollPacket, wavePollPacket;
 
 		public PollRequestThread(DatagramSocket socket) {
 			_socket = socket;
@@ -131,8 +131,6 @@ public class DataReceiver extends Thread {
 					DataConstants.ext_poll_request_msg.length);
 			wavePollPacket = new DatagramPacket(DataConstants.ext_poll_request_wave_msg,
 					DataConstants.ext_poll_request_wave_msg.length);
-			heartbeatPacket = new DatagramPacket(DataConstants.mds_create_resp_msg,
-					DataConstants.mds_create_resp_msg.length);
 		}
 
 		public void run() {
@@ -140,7 +138,6 @@ public class DataReceiver extends Thread {
 				try {
 					_socket.send(dataPollPacket);
 					_socket.send(wavePollPacket);
-					_socket.send(heartbeatPacket);
 
 					Thread.sleep(1000);
 				} catch (IOException e) {
@@ -362,8 +359,8 @@ public class DataReceiver extends Thread {
 		_socket.send(sendPkt);
 	}
 
-	private void ProcessPacket(byte[] packetbuffer) throws IOException {
-		InputStream ins = new ByteArrayInputStream(_buf);
+	private void ProcessPacket(byte[] packetbuffer, int length) throws IOException {
+		InputStream ins = new ByteArrayInputStream(_buf, 0, length);
 		if (MDSPollActionResult.isValidType(packetbuffer, _bigEndian)) {
 			MDSPollActionResult result = new MDSPollActionResult();
 			result.read(ins, _bigEndian);

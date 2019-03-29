@@ -295,6 +295,7 @@ public class Models {
 			ins.read(buf);
 
 			value = convertToAttributeValue(buf, bigEndian);
+			logger.debug("AVA={},{}", attribute_id.value(), value);
 		}
 
 		public Object getValue() {
@@ -489,15 +490,17 @@ public class Models {
 			second = (byte) ins.read();
 			sec_fractions = (byte) ins.read();
 
-			Calendar c = Calendar.getInstance();
-			c.set(Integer.parseInt(Integer.toHexString(century), 10) * 100 
-					+ Integer.parseInt(Integer.toHexString(year), 10), 
-					Integer.parseInt(Integer.toHexString(month), 10) - 1, 
-					Integer.parseInt(Integer.toHexString(day), 10), 
-					Integer.parseInt(Integer.toHexString(hour), 10), 
-					Integer.parseInt(Integer.toHexString(minute), 10), 
-					Integer.parseInt(Integer.toHexString(second), 10));
-			date = c.getTime();
+			if (Byte.toUnsignedInt(century) != 0xff) {
+				Calendar c = Calendar.getInstance();
+				c.set(Integer.parseInt(Integer.toHexString(century), 10) * 100 
+						+ Integer.parseInt(Integer.toHexString(year), 10), 
+						Integer.parseInt(Integer.toHexString(month), 10) - 1, 
+						Integer.parseInt(Integer.toHexString(day), 10), 
+						Integer.parseInt(Integer.toHexString(hour), 10), 
+						Integer.parseInt(Integer.toHexString(minute), 10), 
+						Integer.parseInt(Integer.toHexString(second), 10));
+				date = c.getTime();
+			}
 		}
 
 		public void write(DataOutputStream ous) throws IOException {
@@ -924,12 +927,19 @@ public class Models {
 	}
 
 	private static int b2us(byte[] buf, int offset, boolean bigEndian) {
-		int us = ByteBuffer.wrap(buf).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
+		// way 1, The bitmask is to make the conversion give a value in the range 0-65535 rather than -32768-32767.
+		//short s = ...;
+		//int i = s & 0xffff;
+		// way 2
+		// Short.toUnsignedInt(s)
+		short ss = ByteBuffer.wrap(buf, offset, 2).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
+		int us = Short.toUnsignedInt(ss);
 		return us;
 	}
 
 	private static long b2ui(byte[] buf, int offset, boolean bigEndian) {
-		long ui = ByteBuffer.wrap(buf).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getLong();
+		int si = ByteBuffer.wrap(buf, offset, 4).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
+		long ui = Integer.toUnsignedLong(si);
 		return ui;
 	}
 
