@@ -617,17 +617,29 @@ public class DataConstants {
 		NOM_ATTR_GRP_VMO_STATIC(0x811);
 
 		// declaring private variable for getting values
-		private short v;
+		private int v;
 
 		// getter method
-		public short getValue() {
+		public int getValue() {
 			return this.v;
 		}
 
 		// enum constructor - cannot be public or protected
 		private AttributeIDs(int value) {
-			this.v = (short) value;
+			this.v = value;
 		}
+		
+        public boolean Compare(int i){return v == i;}
+        public static AttributeIDs GetValue(int id)
+        {
+        	AttributeIDs[] As = AttributeIDs.values();
+            for(int i = 0; i < As.length; i++)
+            {
+                if(As[i].Compare(id))
+                    return As[i];
+            }
+            return null;
+        }
 	}
 
 	public static enum ObjectClasses // UInt16

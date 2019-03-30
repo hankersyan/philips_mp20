@@ -15,6 +15,8 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import io.hankers.mp20.DataConstants.AttributeIDs;
+
 public class Models {
 
 	static final Logger logger = LogManager.getLogger(Models.class.getName());
@@ -31,7 +33,7 @@ public class Models {
 		private byte b;
 
 		public int value() {
-			return b;
+			return Byte.toUnsignedInt(b);
 		}
 
 		public void setValue(int i) {
@@ -88,9 +90,7 @@ public class Models {
 		private byte h;
 
 		public long value() {
-			return (Byte.toUnsignedLong(h) << 24) 
-					+ (Byte.toUnsignedLong(mh) << 16) 
-					+ (Byte.toUnsignedLong(ml) << 8)
+			return (Byte.toUnsignedLong(h) << 24) + (Byte.toUnsignedLong(mh) << 16) + (Byte.toUnsignedLong(ml) << 8)
 					+ Byte.toUnsignedLong(l);
 		}
 
@@ -124,45 +124,61 @@ public class Models {
 	}
 
 	public static class Float32 {
-		private byte l;
-		private byte ml;
-		private byte mh;
+		private Ubyte l = new Ubyte();
+		private Ubyte ml = new Ubyte();
+		private Ubyte mh = new Ubyte();
 		private byte h;
-		private double value;
+		private double value = Double.NaN;
+		static final double MIN = -(Math.pow(2, 23) - 3);
+		static final double MAX = +(Math.pow(2, 23) - 3);
 
 		public double value() {
 			return value;
+		}
+		
+		public String toString() {
+			if (Double.isNaN(value)) {
+				return "NaN";
+			}
+			return String.valueOf(value);
 		}
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			if (bigEndian) {
 				h = (byte) ins.read();
-				mh = (byte) ins.read();
-				ml = (byte) ins.read();
-				l = (byte) ins.read();
+				mh.read(ins);
+				ml.read(ins);
+				l.read(ins);
 			} else {
-				l = (byte) ins.read();
-				ml = (byte) ins.read();
-				mh = (byte) ins.read();
+				l.read(ins);
+				ml.read(ins);
+				mh.read(ins);
 				h = (byte) ins.read();
 			}
 
-			int exponent = h;
-			int mantissa = (mh << 16) + (ml << 8) + l;
-			value = mantissa * Math.pow((double) 10, (double) exponent);
+			int exponent = h; // signed
+			int mantissa = (mh.value() << 16) + (ml.value() << 8) + l.value(); // signed
+			// -128 <= exponent <= 127
+			// -(2^23-3) <= mantissa <= +(2^23-3)
+			if (MIN <= mantissa && mantissa <= MAX) {
+				value = mantissa * Math.pow((double) 10, (double) exponent);
+			} else {
+				value = Double.NaN;
+			}
+			logger.trace("Float32,{},{},{},{},{}={}", h, mh.value(), ml.value(), l.value(), mantissa, value);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
 			if (bigEndian) {
-				ous.writeByte(h);
-				ous.writeByte(mh);
-				ous.writeByte(ml);
-				ous.writeByte(l);
+				ous.write(h);
+				mh.write(ous);
+				ml.write(ous);
+				l.write(ous);
 			} else {
-				ous.writeByte(l);
-				ous.writeByte(ml);
-				ous.writeByte(mh);
-				ous.writeByte(h);
+				l.write(ous);
+				ml.write(ous);
+				mh.write(ous);
+				ous.write(h);
 			}
 		}
 	}
@@ -295,7 +311,8 @@ public class Models {
 			ins.read(buf);
 
 			value = convertToAttributeValue(buf, bigEndian);
-			logger.debug("AVA={},{}", attribute_id.value(), value);
+			AttributeIDs attrId = DataConstants.AttributeIDs.GetValue(attribute_id.value());
+			logger.debug("AVA={},\t\t{}", attrId != null ? attrId.name() : attribute_id.value(), value);
 		}
 
 		public Object getValue() {
@@ -389,12 +406,12 @@ public class Models {
 	public static class AttributeList { // 4+length bytes
 		private Ushort count = new Ushort();
 		private Ushort length = new Ushort(); // length in bytes
-		private ArrayList<AVAType> value;
+		private List<AVAType> value;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
+			length.read(ins, bigEndian);
 			if (count.value() > 0) {
-				length.read(ins, bigEndian);
 				value = new ArrayList<AVAType>();
 				for (int i = 0; i < count.value(); i++) {
 					AVAType ava = new AVAType();
@@ -406,11 +423,9 @@ public class Models {
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
 			count.write(ous, bigEndian);
-			if (count.value() > 0) {
-				length.write(ous, bigEndian);
-				for (int i = 0; i < count.value(); i++) {
-					value.get(i).write(ous, bigEndian);
-				}
+			length.write(ous, bigEndian);
+			for (int i = 0; i < count.value(); i++) {
+				value.get(i).write(ous, bigEndian);
 			}
 		}
 	}
@@ -492,12 +507,11 @@ public class Models {
 
 			if (Byte.toUnsignedInt(century) != 0xff) {
 				Calendar c = Calendar.getInstance();
-				c.set(Integer.parseInt(Integer.toHexString(century), 10) * 100 
-						+ Integer.parseInt(Integer.toHexString(year), 10), 
-						Integer.parseInt(Integer.toHexString(month), 10) - 1, 
-						Integer.parseInt(Integer.toHexString(day), 10), 
-						Integer.parseInt(Integer.toHexString(hour), 10), 
-						Integer.parseInt(Integer.toHexString(minute), 10), 
+				c.set(Integer.parseInt(Integer.toHexString(century), 10) * 100
+						+ Integer.parseInt(Integer.toHexString(year), 10),
+						Integer.parseInt(Integer.toHexString(month), 10) - 1,
+						Integer.parseInt(Integer.toHexString(day), 10), Integer.parseInt(Integer.toHexString(hour), 10),
+						Integer.parseInt(Integer.toHexString(minute), 10),
 						Integer.parseInt(Integer.toHexString(second), 10));
 				date = c.getTime();
 			}
@@ -675,12 +689,12 @@ public class Models {
 	public static class RORSapdu {
 		Ushort invoke_id = new Ushort();
 		Ushort command_type = new Ushort();
-							// CMD_EVENT_REPORT 0, 
-							// CMD_CONFIRMED_EVENT_REPORT 1, 
-							// CMD_GET 3, 
-							// CMD_SET 4,
-							// CMD_CONFIRMED_SET 5, 
-							// CMD_CONFIRMED_ACTION 7
+		// CMD_EVENT_REPORT 0,
+		// CMD_CONFIRMED_EVENT_REPORT 1,
+		// CMD_GET 3,
+		// CMD_SET 4,
+		// CMD_CONFIRMED_SET 5,
+		// CMD_CONFIRMED_ACTION 7
 		Ushort length = new Ushort();
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -842,11 +856,13 @@ public class Models {
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
 			length.read(ins, bigEndian);
-			value = new ArrayList<SingleContextPoll>();
-			for (int i = 0; i < count.value(); i++) {
-				SingleContextPoll scp = new SingleContextPoll();
-				scp.read(ins, bigEndian);
-				value.add(scp);
+			if (count.value() > 0) {
+				value = new ArrayList<SingleContextPoll>();
+				for (int i = 0; i < count.value(); i++) {
+					SingleContextPoll scp = new SingleContextPoll();
+					scp.read(ins, bigEndian);
+					value.add(scp);
+				}
 			}
 		}
 
@@ -859,10 +875,10 @@ public class Models {
 		}
 	}
 
-	// typedef struct {
-	// Handle obj_handle;
-	// AttributeList attributes;
-	// } ObservationPoll;
+// typedef struct {
+// 		Handle obj_handle;
+// 		AttributeList attributes;
+// } ObservationPoll;
 	public static class ObservationPoll {
 		Ushort obj_handle = new Ushort();
 		AttributeList attributes = new AttributeList();
@@ -909,11 +925,13 @@ public class Models {
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
 			length.read(ins, bigEndian);
-			value = new ArrayList<ObservationPoll>();
-			for (int i = 0; i < count.value(); i++) {
-				ObservationPoll op = new ObservationPoll();
-				op.read(ins, bigEndian);
-				value.add(op);
+			if (count.value() > 0) {
+				value = new ArrayList<ObservationPoll>();
+				for (int i = 0; i < count.value(); i++) {
+					ObservationPoll op = new ObservationPoll();
+					op.read(ins, bigEndian);
+					value.add(op);
+				}
 			}
 		}
 
@@ -927,18 +945,21 @@ public class Models {
 	}
 
 	private static int b2us(byte[] buf, int offset, boolean bigEndian) {
-		// way 1, The bitmask is to make the conversion give a value in the range 0-65535 rather than -32768-32767.
-		//short s = ...;
-		//int i = s & 0xffff;
+		// way 1, The bitmask is to make the conversion give a value in the range
+		// 0-65535 rather than -32768-32767.
+		// short s = ...;
+		// int i = s & 0xffff;
 		// way 2
 		// Short.toUnsignedInt(s)
-		short ss = ByteBuffer.wrap(buf, offset, 2).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
+		short ss = ByteBuffer.wrap(buf, offset, 2).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN)
+				.getShort();
 		int us = Short.toUnsignedInt(ss);
 		return us;
 	}
 
 	private static long b2ui(byte[] buf, int offset, boolean bigEndian) {
-		int si = ByteBuffer.wrap(buf, offset, 4).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
+		int si = ByteBuffer.wrap(buf, offset, 4).order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN)
+				.getInt();
 		long ui = Integer.toUnsignedLong(si);
 		return ui;
 	}
@@ -1322,7 +1343,7 @@ public class Models {
 		Ushort physio_id = new Ushort();
 		Ushort state = new Ushort(); // eg: DEMO_DATA
 		Ushort unit_code = new Ushort();
-		Float32 value = new Float32();
+		private Float32 value = new Float32();
 		String physio_str;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
@@ -1340,6 +1361,10 @@ public class Models {
 			unit_code.write(ous, bigEndian);
 			value.write(ous, bigEndian);
 		}
+
+		public String toString() {
+			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.toString() + "}";
+		}
 	}
 
 //	typedef struct {
@@ -1355,11 +1380,13 @@ public class Models {
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
 			length.read(ins, bigEndian);
-			value = new ArrayList<NuObsValue>();
-			for (int i = 0; i < count.value(); i++) {
-				NuObsValue nov = new NuObsValue();
-				nov.read(ins, bigEndian);
-				value.add(nov);
+			if (count.value() > 0) {
+				value = new ArrayList<NuObsValue>();
+				for (int i = 0; i < count.value(); i++) {
+					NuObsValue nov = new NuObsValue();
+					nov.read(ins, bigEndian);
+					value.add(nov);
+				}
 			}
 		}
 
@@ -1369,6 +1396,18 @@ public class Models {
 			for (int i = 0; i < count.value(); i++) {
 				value.get(i).write(ous, bigEndian);
 			}
+		}
+
+		public String toString() {
+			if (value != null) {
+				String ret = "[";
+				for (int i = 0; i < value.size(); i++) {
+					ret += value.get(i).toString() + ",";
+				}
+				ret = ret.replaceAll(",$", "") + "]";
+				return ret;
+			}
+			return "";
 		}
 
 	}
@@ -1536,6 +1575,7 @@ public class Models {
 		Ushort state = new Ushort();
 		Ushort length = new Ushort();
 		byte[] value;
+		String physio_str;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			physio_id.read(ins, bigEndian);
@@ -1543,6 +1583,8 @@ public class Models {
 			length.read(ins, bigEndian);
 			value = new byte[length.value()];
 			ins.read(value);
+
+			physio_str = DataConstants.AlertSource.GetValue(physio_id.value()).name();
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1551,6 +1593,11 @@ public class Models {
 			length.write(ous, bigEndian);
 			ous.write(value);
 		}
+
+		public String toString() {
+			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.length + " BYTES}";
+		}
+
 	}
 
 //	typedef struct {
@@ -1566,11 +1613,13 @@ public class Models {
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			count.read(ins, bigEndian);
 			length.read(ins, bigEndian);
-			value = new ArrayList<SaObsValue>();
-			for (int i = 0; i < count.value(); i++) {
-				SaObsValue tmp = new SaObsValue();
-				tmp.read(ins, bigEndian);
-				value.add(tmp);
+			if (count.value() > 0) {
+				value = new ArrayList<SaObsValue>();
+				for (int i = 0; i < count.value(); i++) {
+					SaObsValue tmp = new SaObsValue();
+					tmp.read(ins, bigEndian);
+					value.add(tmp);
+				}
 			}
 		}
 
@@ -1580,6 +1629,17 @@ public class Models {
 			for (int i = 0; i < count.value(); i++) {
 				value.get(i).write(ous, bigEndian);
 			}
+		}
+
+		public String toString() {
+			if (count.value() > 0 && value != null) {
+				String ret = "[";
+				for (int i = 0; i < count.value(); i++) {
+					ret += value.get(i).toString() + ",";
+				}
+				return ret.replaceAll(",$", "") + "]";
+			}
+			return "NULL";
 		}
 	}
 
