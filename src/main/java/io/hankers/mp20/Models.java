@@ -4,13 +4,16 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.io.ByteArrayInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,7 +22,11 @@ import io.hankers.mp20.DataConstants.AttributeIDs;
 
 public class Models {
 
-	static final Logger logger = LogManager.getLogger(Models.class.getName());
+	static final Logger _logger = LogManager.getLogger(Models.class.getName());
+	
+	static Map<Integer, SaSpec> _saSpecMap = new HashMap<Integer, SaSpec>(); // observation handle to SaSpec
+	static Map<Integer, SaCalData16> _saCalibMap = new HashMap<Integer, SaCalData16>(); // physio_id to SaCalib
+	static Map<Integer, ScaleRangeSpec16> _saScaleMap = new HashMap<Integer, ScaleRangeSpec16>();
 
 	// About unsigned byte
 	// https://stackoverflow.com/questions/4266756/can-we-make-unsigned-byte-in-java
@@ -30,22 +37,22 @@ public class Models {
 	// }
 
 	public static class Ubyte {
-		private byte b;
+		private char c;
 
 		public int value() {
-			return Byte.toUnsignedInt(b);
+			return c;//Byte.toUnsignedInt(b);
 		}
 
 		public void setValue(int i) {
-			b = (byte) (i & 0xFF);
+			c = (char) (i & 0xFF);
 		}
 
 		public void read(InputStream ins) throws IOException {
-			b = (byte) ins.read();
+			c = (char) ins.read();
 		}
 
 		public void write(DataOutputStream ous) throws IOException {
-			ous.writeByte(b);
+			ous.writeByte(c);
 		}
 	}
 
@@ -135,7 +142,7 @@ public class Models {
 		public double value() {
 			return value;
 		}
-		
+
 		public String toString() {
 			if (Double.isNaN(value)) {
 				return "NaN";
@@ -165,7 +172,7 @@ public class Models {
 			} else {
 				value = Double.NaN;
 			}
-			logger.trace("Float32,{},{},{},{},{}={}", h, mh.value(), ml.value(), l.value(), mantissa, value);
+			_logger.trace("Float32,{},{},{},{},{}={}", h, mh.value(), ml.value(), l.value(), mantissa, value);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -181,6 +188,75 @@ public class Models {
 				ous.write(h);
 			}
 		}
+	}
+
+//	typedef struct {
+//	        u_16            length;
+//	        u_16             value[1];
+//	} String;
+	public static class MPString {
+		private Ushort length = new Ushort();
+		private byte[] value;
+		private String str;
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			length.read(ins, bigEndian);
+			if (length.value() > 0) {
+				value = new byte[length.value()];
+				ins.read(value);
+				// str = new String(value, StandardCharsets.UTF_8);
+				str = "";
+				for (int i = 0; i < length.value() - 1;) {
+					int t = ByteBuffer.wrap(value, i, 2)
+							.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
+					t = Short.toUnsignedInt((short)t);
+					// UNICODE private use area, 0xE000 to 0xF8FF, 57344 to 63743
+					if (t >= 0xE000) {
+						switch (t) {
+						case 0xE145:
+							str += "E"; //subscript e
+							break;
+						case 0xE14C:
+							str += "L"; // subscript l
+							break;
+						case 0xE400:
+							str += "L/"; // liter_per
+							break;
+						case 0xE401:
+							str += "H2";
+							break;
+						case 0xE40D:
+							str += "*"; // alert star
+							break;
+						case 0xE425:
+							str += "V"; // V with dot above
+							break;
+						case 0xFEFF:
+							str += ""; // FILL character
+							break;
+						default:
+							str += new String(value, i, 2, StandardCharsets.UTF_8);
+							break;
+						}						
+					} else {
+						str += new String(value, i, 2, StandardCharsets.UTF_8);						
+					}
+					i += 2;
+				}
+			}
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			length.write(ous, bigEndian);
+			if (length.value() > 0) {
+				ous.write(value);
+			}
+		}
+
+		public String getString() {
+			return str;
+		}
+
 	}
 
 	public static class Nomenclature {
@@ -312,7 +388,7 @@ public class Models {
 
 			value = convertToAttributeValue(buf, bigEndian);
 			AttributeIDs attrId = DataConstants.AttributeIDs.GetValue(attribute_id.value());
-			logger.debug("AVA={},\t\t{}", attrId != null ? attrId.name() : attribute_id.value(), value);
+			_logger.debug("AVA={},\t\t{}", attrId != null ? attrId.name() : attribute_id.value(), value);
 		}
 
 		public Object getValue() {
@@ -355,7 +431,12 @@ public class Models {
 
 			case DataConstants.NOM_ATTR_ID_LABEL_STRING:
 //              ReadIDLabelString(avaattribobjects);
-				ret = new String(value, StandardCharsets.UTF_8);
+				// ret = new String(value, StandardCharsets.UTF_8);
+				MPString mpstr = new MPString();
+				InputStream ins5 = new ByteArrayInputStream(value);
+				mpstr.read(ins5, bigEndian);
+				ins5.close();
+				ret = mpstr.getString();
 				break;
 
 			case DataConstants.NOM_ATTR_SA_VAL_OBS:
@@ -494,6 +575,7 @@ public class Models {
 		@SuppressWarnings("unused")
 		private byte sec_fractions;
 		private Date date;
+		private static final SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz");
 
 		public void read(InputStream ins) throws IOException {
 			century = (byte) ins.read();
@@ -530,6 +612,10 @@ public class Models {
 
 		public Date getDate() {
 			return date;
+		}
+		
+		public String getDateStr() {
+			return date != null ? _sdf.format(date) : "";
 		}
 	}
 
@@ -646,14 +732,14 @@ public class Models {
 					absoluteTime.read(instream);
 					ins.close();
 					System.out.println("AbsoluteTime=" + absoluteTime.getDate());
-					logger.info("AbsoluteTime=" + absoluteTime.getDate());
+					_logger.info("AbsoluteTime=" + absoluteTime.getDate());
 				} else if (ava.attribute_id.value() == DataConstants.NOM_ATTR_TIME_REL) {
 					if (ava.length.value() == 4) {
 						relativeTime = java.nio.ByteBuffer.wrap(ava.buf)
 								.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
-						logger.debug("relativeTime=" + relativeTime);
+						_logger.debug("relativeTime=" + relativeTime);
 					} else {
-						logger.warn("ERROR: invalid relative tiime");
+						_logger.warn("ERROR: invalid relative tiime");
 					}
 				}
 			}
@@ -885,6 +971,7 @@ public class Models {
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			obj_handle.read(ins, bigEndian);
+			_logger.debug("ObservationPoll, obj_handle={}", obj_handle.value());
 			attributes.read(ins, bigEndian);
 		}
 
@@ -1141,11 +1228,13 @@ public class Models {
 		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			_logger.debug("Start to parse MDSPollActionResult");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rorsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReply.read(ins, bigEndian);
+			_logger.debug("End to parse MDSPollActionResult");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1179,11 +1268,13 @@ public class Models {
 		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			_logger.debug("Start to parse MDSPollActionResultLinked");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rolrsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReply.read(ins, bigEndian);
+			_logger.debug("End to parse MDSPollActionResultLinked");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1235,6 +1326,8 @@ public class Models {
 			polled_obj_type.read(ins, bigEndian);
 			polled_attr_grp.read(ins, bigEndian);
 			poll_info_list.read(ins, bigEndian);
+			
+			_logger.debug("ABS time={}, REL time={}", abs_time_stamp.getDateStr(), rel_time_stamp.value());
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1265,11 +1358,13 @@ public class Models {
 		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			_logger.debug("Start to parse MDSPollActionResultExt");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rorsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReplyExt.read(ins, bigEndian);
+			_logger.debug("End to parse MDSPollActionResultExt");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1303,11 +1398,13 @@ public class Models {
 		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			_logger.debug("Start to parse MDSPollActionResultExtLinked");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rolrsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReplyExt.read(ins, bigEndian);
+			_logger.debug("End to parse MDSPollActionResultExtLinked");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1463,6 +1560,10 @@ public class Models {
 			significant_bits.write(ous);
 		}
 
+		public String toString() {
+			return String.format("{sample_size: %d, significant_bits: %d}", 
+					sample_size.value(), significant_bits.value());
+		}
 	}
 
 // typedef struct {
@@ -1492,6 +1593,11 @@ public class Models {
 			sample_type.write(ous);
 			flags.write(ous, bigEndian);
 		}
+		
+		public String toString() {
+			return String.format("{array_size: %d, sample_type: %s, flags: 0x%04X}", 
+					array_size.value(), sample_type, flags.value());
+		}
 	}
 
 //    typedef struct {
@@ -1518,6 +1624,14 @@ public class Models {
 			upper_absolute_value.write(ous, bigEndian);
 			lower_scaled_value.write(ous, bigEndian);
 			upper_scaled_value.write(ous, bigEndian);
+		}
+		
+		public String toString() {
+			return String.format("{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d}", 
+					lower_absolute_value.value(), 
+					upper_absolute_value.value(), 
+					lower_scaled_value.value(),
+					upper_scaled_value.value());
 		}
 	}
 
@@ -1560,11 +1674,21 @@ public class Models {
 			increment.write(ous, bigEndian);
 			cal_type.write(ous, bigEndian);
 		}
+		
+		public String toString() {
+			return String.format("{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d, increment: %d, cal_type: %d}", 
+					lower_absolute_value.value(), 
+					upper_absolute_value.value(), 
+					lower_scaled_value.value(),
+					upper_scaled_value.value(),
+					increment.value(),
+					cal_type.value());
+		}
 	}
 
 //typedef struct {
 //	OIDType	physio_id;
-//	MeasurementState state;
+//	MeasurementState state; // valid if first byte is 0
 //	struct {
 //		u_16 length;
 //		u_8 value[1];
