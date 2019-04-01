@@ -23,10 +23,12 @@ import io.hankers.mp20.DataConstants.AttributeIDs;
 public class Models {
 
 	static final Logger _logger = LogManager.getLogger(Models.class.getName());
-	
-	static Map<Integer, SaSpec> _saSpecMap = new HashMap<Integer, SaSpec>(); // observation handle to SaSpec
-	static Map<Integer, SaCalData16> _saCalibMap = new HashMap<Integer, SaCalData16>(); // physio_id to SaCalib
-	static Map<Integer, ScaleRangeSpec16> _saScaleMap = new HashMap<Integer, ScaleRangeSpec16>();
+
+	static Map<Integer, SaSpec> _objHandle2SaSpecMap = new HashMap<Integer, SaSpec>(); // observation handle to SaSpec
+	static Map<Integer, SaCalData16> _physioId2SaCalMap = new HashMap<Integer, SaCalData16>(); // physio_id to
+																								// SaCalData16
+	// static Map<Integer, ScaleRangeSpec16> _saScaleMap = new HashMap<Integer,
+	// ScaleRangeSpec16>();
 
 	// About unsigned byte
 	// https://stackoverflow.com/questions/4266756/can-we-make-unsigned-byte-in-java
@@ -36,11 +38,22 @@ public class Models {
 	// return b & 0xFF;
 	// }
 
+	static {
+		SaCalData16 ecgII = new SaCalData16(0, 1, 0x1fe7, 0x20af); // 0x107
+		SaCalData16 ecgV5 = new SaCalData16(0, 1, 0x1fd4, 0x209c); // 0x102
+		SaCalData16 ibp = new SaCalData16(0, 150, 0x0320, 0x0c80); // 0x4A10
+		SaCalData16 resp = new SaCalData16(0, 1, 0x04ce, 0x0b33); // 0x5000
+		_physioId2SaCalMap.put(0x107, ecgII);
+		_physioId2SaCalMap.put(0x102, ecgV5);
+		_physioId2SaCalMap.put(0x4A10, ibp);
+		_physioId2SaCalMap.put(0x5000, resp);
+	}
+
 	public static class Ubyte {
 		private char c;
 
 		public int value() {
-			return c;//Byte.toUnsignedInt(b);
+			return c;// Byte.toUnsignedInt(b);
 		}
 
 		public void setValue(int i) {
@@ -143,6 +156,29 @@ public class Models {
 			return value;
 		}
 
+		public void setValue(double v) {
+			// long bits = Double.doubleToLongBits(v);
+			// IEEE 754
+			// boolean negative = (bits & 0x8000000000000000L) != 0;
+			// long exponent = bits & 0x7ff0000000000000L;
+			// long mantissa = bits & 0x000fffffffffffffL;
+
+			float f = (float) v;
+			int bits = Float.floatToIntBits(f);
+			int exponent = bits & 0x7f000000;
+			int mantissa = bits & 0x00ffffff;
+
+			if (MIN <= mantissa && mantissa <= MAX) {
+				h = (byte) exponent;
+				mh.setValue((mantissa >> 16) & 0xFF);
+				ml.setValue((mantissa >> 8) & 0xFF);
+				l.setValue(mantissa & 0xFF);
+				value = mantissa * Math.pow((double) 10, (double) exponent);
+			} else {
+				value = Double.NaN;
+			}
+		}
+
 		public String toString() {
 			if (Double.isNaN(value)) {
 				return "NaN";
@@ -163,6 +199,7 @@ public class Models {
 				h = (byte) ins.read();
 			}
 
+			// GIGP-40, the first 8 bits is signed exponent.
 			int exponent = h; // signed
 			int mantissa = (mh.value() << 16) + (ml.value() << 8) + l.value(); // signed
 			// -128 <= exponent <= 127
@@ -209,12 +246,12 @@ public class Models {
 				for (int i = 0; i < length.value() - 1;) {
 					int t = ByteBuffer.wrap(value, i, 2)
 							.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
-					t = Short.toUnsignedInt((short)t);
+					t = Short.toUnsignedInt((short) t);
 					// UNICODE private use area, 0xE000 to 0xF8FF, 57344 to 63743
 					if (t >= 0xE000) {
 						switch (t) {
 						case 0xE145:
-							str += "E"; //subscript e
+							str += "E"; // subscript e
 							break;
 						case 0xE14C:
 							str += "L"; // subscript l
@@ -237,9 +274,9 @@ public class Models {
 						default:
 							str += new String(value, i, 2, StandardCharsets.UTF_8);
 							break;
-						}						
+						}
 					} else {
-						str += new String(value, i, 2, StandardCharsets.UTF_8);						
+						str += new String(value, i, 2, StandardCharsets.UTF_8);
 					}
 					i += 2;
 				}
@@ -397,32 +434,25 @@ public class Models {
 
 		private Object convertToAttributeValue(byte[] value, boolean bigEndian) throws IOException {
 			Object ret = null;
+			InputStream ins = new ByteArrayInputStream(value);
 			switch (attribute_id.value()) {
 			case DataConstants.NOM_ATTR_ID_HANDLE:
-				// ReadIDHandle(avaattribobjects);
 				ret = b2us(value, 0, bigEndian);
 				break;
 
 			case DataConstants.NOM_ATTR_ID_LABEL:
-//              ReadIDLabel(avaattribobjects);
 				ret = b2ui(value, 0, bigEndian);
 				break;
 
 			case DataConstants.NOM_ATTR_NU_VAL_OBS:
-//              ReadNumericObservationValue(avaattribobjects, timeModel, numericValResult);
 				NuObsValue tmp = new NuObsValue();
-				InputStream ins = new ByteArrayInputStream(value);
 				tmp.read(ins, bigEndian);
-				ins.close();
 				ret = tmp;
 				break;
 
 			case DataConstants.NOM_ATTR_NU_CMPD_VAL_OBS:
-//              ReadCompoundNumericObsValue(avaattribobjects, timeModel, numericValResult);
 				NuObsValueCmp tmp2 = new NuObsValueCmp();
-				InputStream ins2 = new ByteArrayInputStream(value);
-				tmp2.read(ins2, bigEndian);
-				ins2.close();
+				tmp2.read(ins, bigEndian);
 				ret = tmp2;
 				break;
 
@@ -430,50 +460,47 @@ public class Models {
 				break;
 
 			case DataConstants.NOM_ATTR_ID_LABEL_STRING:
-//              ReadIDLabelString(avaattribobjects);
 				// ret = new String(value, StandardCharsets.UTF_8);
 				MPString mpstr = new MPString();
-				InputStream ins5 = new ByteArrayInputStream(value);
-				mpstr.read(ins5, bigEndian);
-				ins5.close();
+				mpstr.read(ins, bigEndian);
 				ret = mpstr.getString();
 				break;
 
 			case DataConstants.NOM_ATTR_SA_VAL_OBS:
-//              using (new PerformanceTimer("NOM_ATTR_SA_VAL_OBS"))
-//              	ReadWaveSaObservationValueObject(avaattribobjects, timeModel, waveValResult);
 				SaObsValue saobsvalue = new SaObsValue();
-				InputStream ins3 = new ByteArrayInputStream(value);
-				saobsvalue.read(ins3, bigEndian);
-				ins3.close();
+				saobsvalue.read(ins, bigEndian);
 				ret = saobsvalue;
 				break;
 
 			case DataConstants.NOM_ATTR_SA_CMPD_VAL_OBS:
-//              ReadCompoundWaveSaObservationValue(avaattribobjects, timeModel, waveValResult);
 				SaObsValueCmp saobsvalueCmp = new SaObsValueCmp();
-				InputStream ins4 = new ByteArrayInputStream(value);
-				saobsvalueCmp.read(ins4, bigEndian);
-				ins4.close();
+				saobsvalueCmp.read(ins, bigEndian);
 				ret = saobsvalueCmp;
 				break;
 
 			case DataConstants.NOM_ATTR_SA_SPECN:
-				ret = ReadSaSpecifications(value, bigEndian);
+				SaSpec saspec = new SaSpec();
+				saspec.read(ins, bigEndian);
+				ret = saspec;
 				break;
 
 			case DataConstants.NOM_ATTR_SCALE_SPECN_I16:
-				ret = ReadSaScaleSpecifications(value, bigEndian);
+				ScaleRangeSpec16 srspec = new ScaleRangeSpec16();
+				srspec.read(ins, bigEndian);
+				ret = srspec;
 				break;
 
 			case DataConstants.NOM_ATTR_SA_CALIB_I16:
-				ret = ReadSaCalibrationSpecifications(value, bigEndian);
+				SaCalData16 sacal = new SaCalData16();
+				sacal.read(ins, bigEndian);
+				ret = sacal;
 				break;
 
 			default:
 				// unknown attribute -> do nothing
 				break;
 			}
+			ins.close();
 			return ret;
 		}
 
@@ -596,6 +623,7 @@ public class Models {
 						Integer.parseInt(Integer.toHexString(minute), 10),
 						Integer.parseInt(Integer.toHexString(second), 10));
 				date = c.getTime();
+				_logger.debug("AbsoluteTime={}", _sdf.format(date));
 			}
 		}
 
@@ -613,7 +641,7 @@ public class Models {
 		public Date getDate() {
 			return date;
 		}
-		
+
 		public String getDateStr() {
 			return date != null ? _sdf.format(date) : "";
 		}
@@ -971,13 +999,102 @@ public class Models {
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			obj_handle.read(ins, bigEndian);
-			_logger.debug("ObservationPoll, obj_handle={}", obj_handle.value());
 			attributes.read(ins, bigEndian);
+
+			parseWave();
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
 			obj_handle.write(ous, bigEndian);
 			attributes.write(ous, bigEndian);
+		}
+
+		void parseWave(boolean bigEndian) {
+			int physio_id = 0;
+			SaSpec saSpec = null;
+			SaCalData16 saCal = null;
+			SaObsValue saObs = null;
+			SaObsValueCmp saObsCmp = null;
+			if (attributes.count.value() > 0) {
+				for (int i = 0; i < attributes.value.size(); i++) {
+					AVAType ava = attributes.value.get(i);
+					if (ava.value instanceof SaSpec) {
+						saSpec = (SaSpec) ava.value;
+					} else if (ava.value instanceof SaCalData16) {
+						saCal = (SaCalData16) ava.value;
+					} else if (ava.value instanceof SaObsValue) {
+						saObs = (SaObsValue) ava.value;
+					} else if (ava.value instanceof SaObsValueCmp) {
+						saObsCmp = (SaObsValueCmp) ava.value;
+					} else if (ava.attribute_id.value() == DataConstants.NOM_ATTR_ID_LABEL) {
+						physio_id = (int) (((Long) ava.value) & 0xFFFF); // GIGP-180
+					}
+				}
+			}
+			if (saSpec != null || saCal != null) {
+				_logger.debug("ObservationPoll, obj_handle={}, physio_id={}, saSpec={}, saCal={}", obj_handle.value(),
+						physio_id, saSpec != null ? saSpec : "NULL", saCal != null ? saCal : "NULL");
+				if (saSpec != null && !_objHandle2SaSpecMap.containsKey(obj_handle.value())) {
+					_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
+				}
+
+				if (saCal != null && !_physioId2SaCalMap.containsKey(physio_id)) {
+					_physioId2SaCalMap.put(physio_id, saCal);
+				}
+			}
+			if (saCal == null && _physioId2SaCalMap.containsKey(physio_id)) {
+				saCal = _physioId2SaCalMap.get(physio_id);
+			}
+			if (saSpec == null && _objHandle2SaSpecMap.containsKey(obj_handle.value())) {
+				saSpec = _objHandle2SaSpecMap.get(obj_handle.value());
+			}
+			if (saObs != null) {
+				if (saSpec == null) {
+					int wavevalobjectslength = saObs.length.value();
+					if (wavevalobjectslength % 128 == 0) {
+						// use default values for ecg
+						saSpec = new SaSpec(0x80, 0x10, 0x0E, 0x3000);
+					} else if (wavevalobjectslength % 64 == 0) {
+						// use default values for art ibp
+						saSpec = new SaSpec(0x40, 0x10, 0x0E, 0x3000);
+					} else if (wavevalobjectslength % 32 == 0) {
+						// use default values for resp
+						saSpec = new SaSpec(0x20, 0x10, 0x0C, 0x8000);
+					} else if (wavevalobjectslength % 16 == 0) {
+						// use default values for pleth
+						saSpec = new SaSpec(0x10, 0x10, 0x0C, 0x8000);
+					}
+					_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
+				}
+				// Calculate
+				if (saCal == null) {
+					_logger.warn("No SaSpec for {}", saObs.physio_str);
+					return;
+				}
+				int flags = saSpec.flags.value();
+				int step = saSpec.sample_type.sample_size.value() / 8; // always 2
+				if (step != 2) {
+					_logger.error("{} sample_size is {}", saObs.physio_str, step);
+				}
+				int mask = 0xffff >> (saSpec.sample_type.sample_size.value() - saSpec.sample_type.significant_bits.value());
+				int elemCount = saObs.length.value() / step;
+				short tmps[] = new short[elemCount];
+				for (int i = 0; i < saObs.value.length;) {
+					int tmp = ByteBuffer.wrap(saObs.value, i, step)
+							.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
+					if ((flags & SaSpec.SA_EXT_VAL_RANGE) == SaSpec.SA_EXT_VAL_RANGE) {
+						tmp = tmp & mask;
+					}
+					// Calibrate
+					if (saCal != null) {
+						if (tmp < saCal.lower_scaled_value.value())
+							tmp = saCal.lower_scaled_value.value();
+					}
+					tmps[i/2] = (short)tmp;
+					i += step;
+				}
+			}
+
 		}
 	}
 
@@ -1326,8 +1443,8 @@ public class Models {
 			polled_obj_type.read(ins, bigEndian);
 			polled_attr_grp.read(ins, bigEndian);
 			poll_info_list.read(ins, bigEndian);
-			
-			_logger.debug("ABS time={}, REL time={}", abs_time_stamp.getDateStr(), rel_time_stamp.value());
+
+			_logger.debug("AbsoluteTime={}, REL time={}", abs_time_stamp.getDateStr(), rel_time_stamp.value());
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1509,39 +1626,6 @@ public class Models {
 
 	}
 
-	private static SaSpec ReadSaSpecifications(byte[] buf, boolean bigEndian) throws IOException {
-		InputStream ins = new ByteArrayInputStream(buf);
-
-		SaSpec saspec = new SaSpec();
-		saspec.read(ins, bigEndian);
-
-		ins.close();
-
-		return saspec;
-	}
-
-	public static ScaleRangeSpec16 ReadSaScaleSpecifications(byte[] buf, boolean bigEndian) throws IOException {
-		InputStream ins = new ByteArrayInputStream(buf);
-
-		ScaleRangeSpec16 srspec = new ScaleRangeSpec16();
-		srspec.read(ins, bigEndian);
-
-		ins.close();
-
-		return srspec;
-	}
-
-	public static SaCalData16 ReadSaCalibrationSpecifications(byte[] buf, boolean bigEndian) throws IOException {
-		InputStream ins = new ByteArrayInputStream(buf);
-
-		SaCalData16 sacal = new SaCalData16();
-		sacal.read(ins, bigEndian);
-
-		ins.close();
-
-		return sacal;
-	}
-
 //    typedef struct {
 //    	u_8 sample_size;
 //    	u_8 significant_bits;
@@ -1561,8 +1645,8 @@ public class Models {
 		}
 
 		public String toString() {
-			return String.format("{sample_size: %d, significant_bits: %d}", 
-					sample_size.value(), significant_bits.value());
+			return String.format("{sample_size: %d, significant_bits: %d}", sample_size.value(),
+					significant_bits.value());
 		}
 	}
 
@@ -1582,6 +1666,16 @@ public class Models {
 		public static final int STATIC_SCALE = 0x2000;
 		public static final int SA_EXT_VAL_RANGE = 0x1000;
 
+		public SaSpec() {
+		}
+
+		public SaSpec(int arraySize, int sampleSize, int significantBits, int iflags) {
+			array_size.setValue(arraySize);
+			sample_type.sample_size.setValue(sampleSize);
+			sample_type.significant_bits.setValue(significantBits);
+			flags.setValue(iflags);
+		}
+
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			array_size.read(ins, bigEndian);
 			sample_type.read(ins);
@@ -1593,10 +1687,10 @@ public class Models {
 			sample_type.write(ous);
 			flags.write(ous, bigEndian);
 		}
-		
+
 		public String toString() {
-			return String.format("{array_size: %d, sample_type: %s, flags: 0x%04X}", 
-					array_size.value(), sample_type, flags.value());
+			return String.format("{array_size: %d, sample_type: %s, flags: 0x%04X}", array_size.value(), sample_type,
+					flags.value());
 		}
 	}
 
@@ -1625,12 +1719,11 @@ public class Models {
 			lower_scaled_value.write(ous, bigEndian);
 			upper_scaled_value.write(ous, bigEndian);
 		}
-		
+
 		public String toString() {
-			return String.format("{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d}", 
-					lower_absolute_value.value(), 
-					upper_absolute_value.value(), 
-					lower_scaled_value.value(),
+			return String.format(
+					"{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d}",
+					lower_absolute_value.value(), upper_absolute_value.value(), lower_scaled_value.value(),
 					upper_scaled_value.value());
 		}
 	}
@@ -1657,6 +1750,17 @@ public class Models {
 		public static final int BAR = 0;
 		public static final int STAIR = 1;
 
+		public SaCalData16() {
+		}
+
+		public SaCalData16(float lowerAbsoluteValue, float upperAbsoluteValue, int lowerScaledValue,
+				int upperScaledValue) {
+			lower_absolute_value.setValue(lowerAbsoluteValue);
+			upper_absolute_value.setValue(upperAbsoluteValue);
+			lower_scaled_value.setValue(lowerScaledValue);
+			upper_scaled_value.setValue(upperScaledValue);
+		}
+
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			lower_absolute_value.read(ins, bigEndian);
 			upper_absolute_value.read(ins, bigEndian);
@@ -1674,15 +1778,12 @@ public class Models {
 			increment.write(ous, bigEndian);
 			cal_type.write(ous, bigEndian);
 		}
-		
+
 		public String toString() {
-			return String.format("{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d, increment: %d, cal_type: %d}", 
-					lower_absolute_value.value(), 
-					upper_absolute_value.value(), 
-					lower_scaled_value.value(),
-					upper_scaled_value.value(),
-					increment.value(),
-					cal_type.value());
+			return String.format(
+					"{lower_absolute_value: %f, upper_absolute_value: %f, lower_scaled_value: %d, upper_scaled_value: %d, increment: %d, cal_type: %d}",
+					lower_absolute_value.value(), upper_absolute_value.value(), lower_scaled_value.value(),
+					upper_scaled_value.value(), increment.value(), cal_type.value());
 		}
 	}
 
