@@ -1001,7 +1001,7 @@ public class Models {
 			obj_handle.read(ins, bigEndian);
 			attributes.read(ins, bigEndian);
 
-			parseWave();
+			parseWave(bigEndian);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1049,52 +1049,72 @@ public class Models {
 				saSpec = _objHandle2SaSpecMap.get(obj_handle.value());
 			}
 			if (saObs != null) {
-				if (saSpec == null) {
-					int wavevalobjectslength = saObs.length.value();
-					if (wavevalobjectslength % 128 == 0) {
-						// use default values for ecg
-						saSpec = new SaSpec(0x80, 0x10, 0x0E, 0x3000);
-					} else if (wavevalobjectslength % 64 == 0) {
-						// use default values for art ibp
-						saSpec = new SaSpec(0x40, 0x10, 0x0E, 0x3000);
-					} else if (wavevalobjectslength % 32 == 0) {
-						// use default values for resp
-						saSpec = new SaSpec(0x20, 0x10, 0x0C, 0x8000);
-					} else if (wavevalobjectslength % 16 == 0) {
-						// use default values for pleth
-						saSpec = new SaSpec(0x10, 0x10, 0x0C, 0x8000);
-					}
-					_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
-				}
-				// Calculate
-				if (saCal == null) {
-					_logger.warn("No SaSpec for {}", saObs.physio_str);
-					return;
-				}
-				int flags = saSpec.flags.value();
-				int step = saSpec.sample_type.sample_size.value() / 8; // always 2
-				if (step != 2) {
-					_logger.error("{} sample_size is {}", saObs.physio_str, step);
-				}
-				int mask = 0xffff >> (saSpec.sample_type.sample_size.value() - saSpec.sample_type.significant_bits.value());
-				int elemCount = saObs.length.value() / step;
-				short tmps[] = new short[elemCount];
-				for (int i = 0; i < saObs.value.length;) {
-					int tmp = ByteBuffer.wrap(saObs.value, i, step)
-							.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
-					if ((flags & SaSpec.SA_EXT_VAL_RANGE) == SaSpec.SA_EXT_VAL_RANGE) {
-						tmp = tmp & mask;
-					}
-					// Calibrate
-					if (saCal != null) {
-						if (tmp < saCal.lower_scaled_value.value())
-							tmp = saCal.lower_scaled_value.value();
-					}
-					tmps[i/2] = (short)tmp;
-					i += step;
+				calculateAndCalibrateSaObs(saObs, saSpec, saCal, bigEndian);
+			}
+			if (saObsCmp != null && saObsCmp.count.value() > 0) {
+				for (int i = 0; i < saObsCmp.value.size(); i++) {
+					calculateAndCalibrateSaObs(saObsCmp.value.get(i), saSpec, saCal, bigEndian);
 				}
 			}
+		}
 
+		private void calculateAndCalibrateSaObs(SaObsValue saObs, SaSpec saSpec, SaCalData16 saCal, boolean bigEndian) {
+			if (saSpec == null) {
+				int wavevalobjectslength = saObs.length.value();
+				if (wavevalobjectslength % 128 == 0) {
+					// use default values for ecg
+					saSpec = new SaSpec(0x80, 0x10, 0x0E, 0x3000);
+				} else if (wavevalobjectslength % 64 == 0) {
+					// use default values for art ibp
+					saSpec = new SaSpec(0x40, 0x10, 0x0E, 0x3000);
+				} else if (wavevalobjectslength % 32 == 0) {
+					// use default values for resp
+					saSpec = new SaSpec(0x20, 0x10, 0x0C, 0x8000);
+				} else if (wavevalobjectslength % 16 == 0) {
+					// use default values for pleth
+					saSpec = new SaSpec(0x10, 0x10, 0x0C, 0x8000);
+				}
+				_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
+			}
+			// Calculate
+			if (saSpec == null) {
+				_logger.warn("No SaSpec for {}", saObs.physio_str);
+				return;
+			}
+			int flags = saSpec.flags.value();
+			int step = saSpec.sample_type.sample_size.value() / 8; // always 2
+			if (step != 2) {
+				_logger.error("**** {} sample_size is {} ****", saObs.physio_str, step);
+			}
+			int mask = 0xffff >> (saSpec.sample_type.sample_size.value() - saSpec.sample_type.significant_bits.value());
+			int elemCount = saObs.length.value() / step;
+			saObs.calibrated = new char[elemCount];
+			// double absWidth = saCal.upper_absolute_value.value() -
+			// saCal.lower_absolute_value.value();
+			double scaledWidth = saCal != null ? (saCal.upper_scaled_value.value() - saCal.lower_scaled_value.value()) : 0;
+			double factor = scaledWidth > 0 ? 255.0 / scaledWidth : 0;
+			for (int i = 0; i < saObs.value.length;) {
+				int tmp = ByteBuffer.wrap(saObs.value, i, step)
+						.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
+				if ((flags & SaSpec.SA_EXT_VAL_RANGE) == SaSpec.SA_EXT_VAL_RANGE) {
+					tmp = tmp & mask;
+				}
+				// Calibrate
+				char calibratedValue = (char) (tmp >> (saSpec.sample_type.significant_bits.value() - 8));
+				if (saCal != null) {
+					if (tmp < saCal.lower_scaled_value.value())
+						tmp = saCal.lower_scaled_value.value();
+					if (tmp > saCal.upper_scaled_value.value())
+						tmp = saCal.upper_scaled_value.value();
+					if (factor > 0) {
+						calibratedValue = (char) ((tmp - saCal.lower_scaled_value.value()) * factor);
+					}
+				}
+				saObs.calibrated[i / 2] = calibratedValue;
+				i += step;
+			}
+			
+			_logger.debug("{PHYSIO_ID : {}, CALIBRATED : {}}", saObs.physio_str, charArrayToHex(saObs.calibrated));
 		}
 	}
 
@@ -1801,6 +1821,7 @@ public class Models {
 		Ushort length = new Ushort();
 		byte[] value;
 		String physio_str;
+		char[] calibrated;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			physio_id.read(ins, bigEndian);
@@ -1823,6 +1844,9 @@ public class Models {
 			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.length + " BYTES}";
 		}
 
+		public boolean isValid() {
+			return ((state.value() >> 8) & 0xFF) == 0;
+		}
 	}
 
 //	typedef struct {
@@ -1866,6 +1890,17 @@ public class Models {
 			}
 			return "NULL";
 		}
+	}
+
+	private final static char[] hexArray = "0123456789ABCDEF".toCharArray();
+	public static String charArrayToHex(char[] bytes) {
+	    char[] hexChars = new char[bytes.length * 2];
+	    for ( int j = 0; j < bytes.length; j++ ) {
+	        int v = bytes[j] & 0xFF;
+	        hexChars[j * 2] = hexArray[v >>> 4];
+	        hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+	    }
+	    return new String(hexChars);
 	}
 
 }
