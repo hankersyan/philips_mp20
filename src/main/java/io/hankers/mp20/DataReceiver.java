@@ -31,7 +31,7 @@ public class DataReceiver extends Thread {
 	private final static int PORT = 24105;
 	private static InetAddress ADDR;
 	private Models.AbsoluteTime _absoluteTime;
-	private SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz");
+	private SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSz");
 	private Thread _pollThread;
 	private boolean _bigEndian = true;
 	static final Logger _logger = LogManager.getLogger(DataReceiver.class.getName());

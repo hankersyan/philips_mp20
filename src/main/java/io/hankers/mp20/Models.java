@@ -1,20 +1,24 @@
 package io.hankers.mp20;
 
+import java.io.ByteArrayInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
-import java.io.ByteArrayInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -24,9 +28,18 @@ public class Models {
 
 	static final Logger _logger = LogManager.getLogger(Models.class.getName());
 
-	static Map<Integer, SaSpec> _objHandle2SaSpecMap = new HashMap<Integer, SaSpec>(); // observation handle to SaSpec
-	static Map<Integer, SaCalData16> _physioId2SaCalMap = new HashMap<Integer, SaCalData16>(); // physio_id to
-																								// SaCalData16
+	// observation handle to SaSpec
+	static Map<Integer, SaSpec> _objHandle2SaSpecMap = new HashMap<Integer, SaSpec>();
+	// physio_id to SaCalData16
+	static Map<Integer, SaCalData16> _physioId2SaCalMap = new HashMap<Integer, SaCalData16>();
+	static List<Integer> _calibrateWaveHistory = new ArrayList<Integer>();
+	static List<Integer> _originalWaveHistory = new ArrayList<Integer>();
+	static SortedMap<Long, char[]> _xxxECGIIMap = new TreeMap<Long, char[]>();
+	static Date _baseAbsoluteTime;
+	static long _baseRelativeTime;
+
+	private static SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSz");
+
 	// static Map<Integer, ScaleRangeSpec16> _saScaleMap = new HashMap<Integer,
 	// ScaleRangeSpec16>();
 
@@ -39,12 +52,12 @@ public class Models {
 	// }
 
 	static {
-		SaCalData16 ecgII = new SaCalData16(0, 1, 0x1fe7, 0x20af); // 0x107
-		SaCalData16 ecgV5 = new SaCalData16(0, 1, 0x1fd4, 0x209c); // 0x102
+		SaCalData16 ecgII = new SaCalData16(0, 1, 0x1fd4, 0x209c); // 0x102
+		SaCalData16 ecgV5 = new SaCalData16(0, 1, 0x1fe7, 0x20af); // 0x107
 		SaCalData16 ibp = new SaCalData16(0, 150, 0x0320, 0x0c80); // 0x4A10
 		SaCalData16 resp = new SaCalData16(0, 1, 0x04ce, 0x0b33); // 0x5000
-		_physioId2SaCalMap.put(0x107, ecgII);
-		_physioId2SaCalMap.put(0x102, ecgV5);
+		_physioId2SaCalMap.put(0x102, ecgII);
+		_physioId2SaCalMap.put(0x107, ecgV5);
 		_physioId2SaCalMap.put(0x4A10, ibp);
 		_physioId2SaCalMap.put(0x5000, resp);
 	}
@@ -602,7 +615,6 @@ public class Models {
 		@SuppressWarnings("unused")
 		private byte sec_fractions;
 		private Date date;
-		private static final SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz");
 
 		public void read(InputStream ins) throws IOException {
 			century = (byte) ins.read();
@@ -759,13 +771,12 @@ public class Models {
 					InputStream instream = new ByteArrayInputStream(ava.buf);
 					absoluteTime.read(instream);
 					ins.close();
-					System.out.println("AbsoluteTime=" + absoluteTime.getDate());
-					_logger.info("AbsoluteTime=" + absoluteTime.getDate());
+					_baseAbsoluteTime = absoluteTime.getDate();
 				} else if (ava.attribute_id.value() == DataConstants.NOM_ATTR_TIME_REL) {
 					if (ava.length.value() == 4) {
 						relativeTime = java.nio.ByteBuffer.wrap(ava.buf)
 								.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
-						_logger.debug("relativeTime=" + relativeTime);
+						_baseRelativeTime = relativeTime;
 					} else {
 						_logger.warn("ERROR: invalid relative tiime");
 					}
@@ -945,6 +956,10 @@ public class Models {
 			polled_obj_type.read(ins, bigEndian);
 			polled_attr_grp.read(ins, bigEndian);
 			poll_info_list.read(ins, bigEndian);
+
+			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
+			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
+					_sdf.format(calculateTime(rel_time_stamp.value())));
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -987,6 +1002,19 @@ public class Models {
 				value.get(i).write(ous, bigEndian);
 			}
 		}
+
+		public void parseWave(boolean bigEndian, long relativeTime) {
+			if (count.value() < 1)
+				return;
+			for (int i = 0; i < value.size(); i++) {
+				SingleContextPoll scp = value.get(i);
+				if (scp.poll_info.value != null) {
+					for (int m = 0; m < scp.poll_info.value.size(); m++) {
+						scp.poll_info.value.get(m).parseWave(bigEndian, relativeTime);
+					}
+				}
+			}
+		}
 	}
 
 // typedef struct {
@@ -1000,8 +1028,6 @@ public class Models {
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			obj_handle.read(ins, bigEndian);
 			attributes.read(ins, bigEndian);
-
-			parseWave(bigEndian);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1009,7 +1035,7 @@ public class Models {
 			attributes.write(ous, bigEndian);
 		}
 
-		void parseWave(boolean bigEndian) {
+		void parseWave(boolean bigEndian, long relativeTime) {
 			int physio_id = 0;
 			SaSpec saSpec = null;
 			SaCalData16 saCal = null;
@@ -1034,13 +1060,16 @@ public class Models {
 			if (saSpec != null || saCal != null) {
 				_logger.debug("ObservationPoll, obj_handle={}, physio_id={}, saSpec={}, saCal={}", obj_handle.value(),
 						physio_id, saSpec != null ? saSpec : "NULL", saCal != null ? saCal : "NULL");
-				if (saSpec != null && !_objHandle2SaSpecMap.containsKey(obj_handle.value())) {
+				if (saSpec != null) {
 					_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
 				}
 
-				if (saCal != null && !_physioId2SaCalMap.containsKey(physio_id)) {
+				if (saCal != null) {
 					_physioId2SaCalMap.put(physio_id, saCal);
 				}
+			}
+			if (physio_id == 0 && saObs != null) {
+				physio_id = saObs.physio_id.value();
 			}
 			if (saCal == null && _physioId2SaCalMap.containsKey(physio_id)) {
 				saCal = _physioId2SaCalMap.get(physio_id);
@@ -1049,16 +1078,17 @@ public class Models {
 				saSpec = _objHandle2SaSpecMap.get(obj_handle.value());
 			}
 			if (saObs != null) {
-				calculateAndCalibrateSaObs(saObs, saSpec, saCal, bigEndian);
+				calculateAndCalibrateSaObs(saObs, saSpec, saCal, bigEndian, relativeTime);
 			}
 			if (saObsCmp != null && saObsCmp.count.value() > 0) {
 				for (int i = 0; i < saObsCmp.value.size(); i++) {
-					calculateAndCalibrateSaObs(saObsCmp.value.get(i), saSpec, saCal, bigEndian);
+					calculateAndCalibrateSaObs(saObsCmp.value.get(i), saSpec, saCal, bigEndian, relativeTime);
 				}
 			}
 		}
 
-		private void calculateAndCalibrateSaObs(SaObsValue saObs, SaSpec saSpec, SaCalData16 saCal, boolean bigEndian) {
+		private void calculateAndCalibrateSaObs(SaObsValue saObs, SaSpec saSpec, SaCalData16 saCal, boolean bigEndian,
+				long relativeTime) {
 			if (saSpec == null) {
 				int wavevalobjectslength = saObs.length.value();
 				if (wavevalobjectslength % 128 == 0) {
@@ -1091,8 +1121,12 @@ public class Models {
 			saObs.calibrated = new char[elemCount];
 			// double absWidth = saCal.upper_absolute_value.value() -
 			// saCal.lower_absolute_value.value();
-			double scaledWidth = saCal != null ? (saCal.upper_scaled_value.value() - saCal.lower_scaled_value.value()) : 0;
+			double scaledWidth = saCal != null ? (saCal.upper_scaled_value.value() - saCal.lower_scaled_value.value())
+					: 0;
 			double factor = scaledWidth > 0 ? 255.0 / scaledWidth : 0;
+			if (saCal == null) {
+				_logger.info("No SaCalData16 for {}", saObs.physio_str);
+			}
 			for (int i = 0; i < saObs.value.length;) {
 				int tmp = ByteBuffer.wrap(saObs.value, i, step)
 						.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getShort();
@@ -1112,9 +1146,45 @@ public class Models {
 				}
 				saObs.calibrated[i / 2] = calibratedValue;
 				i += step;
+				_originalWaveHistory.add(tmp);
+				_calibrateWaveHistory.add((int) calibratedValue);
 			}
-			
+
 			_logger.debug("{PHYSIO_ID : {}, CALIBRATED : {}}", saObs.physio_str, charArrayToHex(saObs.calibrated));
+			
+			// 0x0101 I
+			// 0x0102 II
+			// 0x013D III
+			if (saObs.physio_id.value() == 0x0101) {
+				if (_xxxECGIIMap.containsKey(relativeTime)) {
+					_xxxECGIIMap.put(relativeTime, ArrayUtils.addAll(_xxxECGIIMap.get(relativeTime), saObs.calibrated));
+				} else {
+					_xxxECGIIMap.put(relativeTime, saObs.calibrated);
+				}
+
+//				for (int i = 0; i < _originalWaveHistory.size(); i++) {
+//					System.out.print(_originalWaveHistory.get(i) + ",");
+//				}
+				System.out.println("\n--------------------\n");
+				// System.out.println(_originalWaveHistory.toString());
+				// System.out.println("\n--------------------\n");
+				// System.out.println(_calibrateWaveHistory.toString());
+
+				ArrayList<Integer> xxx = new ArrayList<Integer>();
+				for (Map.Entry<Long, char[]> entry : _xxxECGIIMap.entrySet()) {
+					System.out.println(entry.getKey() + " => " + _sdf.format(calculateTime(entry.getKey())));
+					for (char c : entry.getValue()) {
+						xxx.add((int) c);
+					}
+				}
+				System.out.println(xxx.size());
+				System.out.println(xxx.toString());
+
+				System.out.println("\n--------------------\n");
+//				for (int i = 0; i < _calibrateWaveHistory.size(); i++) {
+//					System.out.print(_calibrateWaveHistory.get(i) + ",");
+//				}
+			}
 		}
 	}
 
@@ -1464,7 +1534,9 @@ public class Models {
 			polled_attr_grp.read(ins, bigEndian);
 			poll_info_list.read(ins, bigEndian);
 
-			_logger.debug("AbsoluteTime={}, REL time={}", abs_time_stamp.getDateStr(), rel_time_stamp.value());
+			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
+			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
+					_sdf.format(calculateTime(rel_time_stamp.value())));
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1841,11 +1913,8 @@ public class Models {
 		}
 
 		public String toString() {
-			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.length + " BYTES}";
-		}
-
-		public boolean isValid() {
-			return ((state.value() >> 8) & 0xFF) == 0;
+			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.length + " BYTES, state: 0x"
+					+ Integer.toHexString(state.value()) + ", value: " + byteArrayToHex(value) + "}";
 		}
 	}
 
@@ -1893,14 +1962,32 @@ public class Models {
 	}
 
 	private final static char[] hexArray = "0123456789ABCDEF".toCharArray();
+
 	public static String charArrayToHex(char[] bytes) {
-	    char[] hexChars = new char[bytes.length * 2];
-	    for ( int j = 0; j < bytes.length; j++ ) {
-	        int v = bytes[j] & 0xFF;
-	        hexChars[j * 2] = hexArray[v >>> 4];
-	        hexChars[j * 2 + 1] = hexArray[v & 0x0F];
-	    }
-	    return new String(hexChars);
+		char[] hexChars = new char[bytes.length * 2];
+		for (int j = 0; j < bytes.length; j++) {
+			int v = bytes[j] & 0xFF;
+			hexChars[j * 2] = hexArray[v >>> 4];
+			hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+		}
+		return new String(hexChars);
 	}
 
+	public static String byteArrayToHex(byte[] bytes) {
+		char[] hexChars = new char[bytes.length * 2];
+		for (int j = 0; j < bytes.length; j++) {
+			int v = bytes[j] & 0xFF;
+			hexChars[j * 2] = hexArray[v >>> 4];
+			hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+		}
+		return new String(hexChars);
+	}
+
+	public static Date calculateTime(long relativeTime) {
+		// GIGP-36
+		long millis = (long) ((relativeTime - _baseRelativeTime) * 0.125);
+		Calendar calendar = Calendar.getInstance();
+		calendar.setTimeInMillis(_baseAbsoluteTime.getTime() + millis);
+		return calendar.getTime();
+	}
 }
