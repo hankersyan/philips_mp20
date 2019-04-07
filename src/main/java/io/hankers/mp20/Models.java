@@ -15,12 +15,14 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.json.JSONObject;
 
 import io.hankers.mp20.DataConstants.AttributeIDs;
 
@@ -37,6 +39,43 @@ public class Models {
 	static SortedMap<Long, char[]> _xxxECGIIMap = new TreeMap<Long, char[]>();
 	static Date _baseAbsoluteTime;
 	static long _baseRelativeTime;
+	static Map<Integer, SortedMap<Long, byte[]>> _physioId2WaveFormSequenceMap = new HashMap<Integer, SortedMap<Long, byte[]>>();
+	@SuppressWarnings("serial")
+	static Map<Integer, String> WavePhysioIds = new HashMap<Integer, String>() {
+		{
+			put(0x0101, "I");
+			put(0x0102, "II");
+			put(0x013D, "III");
+			put(0x013E, "aVR");
+			put(0x013F, "aVL");
+			put(0x0140, "aVF");
+			put(0x0143, "V");
+			put(0x014B, "MCL");
+			put(0x0103, "V1");
+			put(0x0104, "V2");
+			put(0x0105, "V3");
+			put(0x0106, "V4");
+			put(0x0107, "V5");
+			put(0x0108, "V6");
+			put(0x014C, "MCL1");
+			put(0x4BB4, "Pleth");
+		}
+	};
+	// { 0x0101, 0x0102, 0x013D, 0x013E, 0x013F, 0x0140, 0x0143,
+	// 0x014B, 0x0103, 0x0104, 0x0105, 0x0106, 0x0107, 0x0108, 0x014C, 0x4BB4 }
+	@SuppressWarnings("serial")
+	static Map<Integer, String> vitalSignPhysioIds = new HashMap<Integer, String>() {
+		{
+			put(0x4A05, "NBP_SYS"); // NOM_PRESS_BLD_NONINV_SYS
+			put(0x4A06, "NBP_DIA"); // NOM_PRESS_BLD_NONINV_DIA
+			put(0x4A07, "NBP_MEAN"); // NOM_PRESS_BLD_NONINV_MEAN
+			put(0x500A, "RESP_RATE"); // NOM_RESP_RATE
+			put(0x4BB8, "SPO2"); // NOM_PULS_OXIM_SAT_O2
+			put(0x4822, "PULSE_RATE"); // NOM_PRESS_BLD_NONINV_PULS_RATE
+			put(0x4BB0, "PERFUSION_INDICATOR"); // NOM_PULS_OXIM_PERF_REL
+			put(0x4182, "HEART_BEAT"); // NOM_ECG_CARD_BEAT_RATE
+		}
+	};
 
 	private static SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSz");
 
@@ -60,6 +99,12 @@ public class Models {
 		_physioId2SaCalMap.put(0x107, ecgV5);
 		_physioId2SaCalMap.put(0x4A10, ibp);
 		_physioId2SaCalMap.put(0x5000, resp);
+
+		for (int physioId : WavePhysioIds.keySet()) {
+			_physioId2WaveFormSequenceMap.put(physioId, new TreeMap<Long, byte[]>());
+		}
+
+		new TimeSequenceWorker().start();
 	}
 
 	public static class Ubyte {
@@ -934,49 +979,10 @@ public class Models {
 	}
 
 // typedef struct {
-// 		u_16 poll_number;
-// 		RelativeTime rel_time_stamp;
-// 		AbsoluteTime abs_time_stamp;
-// 		TYPE polled_obj_type;
-// 		OIDType polled_attr_grp;
-// 		PollInfoList poll_info_list;
-// } PollMdibDataReply;
-	public static class PollMdibDataReply { // 24+
-		Ushort poll_number = new Ushort();
-		Uint rel_time_stamp = new Uint();
-		AbsoluteTime abs_time_stamp = new AbsoluteTime(); // 8 bytes
-		TYPE polled_obj_type = new TYPE(); // 4 bytes, skip 16 bytes to code
-		Ushort polled_attr_grp = new Ushort();
-		PollInfoList poll_info_list = new PollInfoList(); // 4+length bytes
-
-		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			poll_number.read(ins, bigEndian);
-			rel_time_stamp.read(ins, bigEndian);
-			abs_time_stamp.read(ins);
-			polled_obj_type.read(ins, bigEndian);
-			polled_attr_grp.read(ins, bigEndian);
-			poll_info_list.read(ins, bigEndian);
-
-			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
-			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
-					_sdf.format(calculateTime(rel_time_stamp.value())));
-		}
-
-		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
-			poll_number.write(ous, bigEndian);
-			rel_time_stamp.write(ous, bigEndian);
-			abs_time_stamp.write(ous);
-			polled_obj_type.write(ous, bigEndian);
-			polled_attr_grp.write(ous, bigEndian);
-			poll_info_list.write(ous, bigEndian);
-		}
-	}
-
-	// typedef struct {
-	// u_16 count;
-	// u_16 length;
-	// SingleContextPoll value[1];
-	// } PollInfoList;
+// 		u_16 count;
+// 		u_16 length;
+// 		SingleContextPoll value[1];
+// } PollInfoList;
 	public static class PollInfoList { // 4+length bytes
 		Ushort count = new Ushort();
 		Ushort length = new Ushort();
@@ -1015,6 +1021,22 @@ public class Models {
 				}
 			}
 		}
+
+		public void publishVitalSign(long relativeTime) {
+			if (count.value() < 1)
+				return;
+			for (int i = 0; i < value.size(); i++) {
+				SingleContextPoll scp = value.get(i);
+				if (scp.poll_info.value != null) {
+					for (int m = 0; m < scp.poll_info.value.size(); m++) {
+						JSONObject json = scp.poll_info.value.get(m).parseVitalSign(relativeTime);
+						if (json != null && !json.isEmpty()) {
+							MqttPublisher.addMessage(json.toString());
+						}
+					}
+				}
+			}
+		}
 	}
 
 // typedef struct {
@@ -1033,6 +1055,42 @@ public class Models {
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
 			obj_handle.write(ous, bigEndian);
 			attributes.write(ous, bigEndian);
+		}
+
+		JSONObject parseVitalSign(long relativeTime) {
+			if (attributes.count.value() < 1) {
+				return null;
+			}
+			JSONObject ret = new JSONObject();
+			for (int i = 0; i < attributes.value.size(); i++) {
+				AVAType ava = attributes.value.get(i);
+				NuObsValue nu;
+				NuObsValueCmp nuCmp;
+				if (ava.value instanceof NuObsValue) {
+					nu = (NuObsValue) ava.value;
+					if (nu != null && nu.value != null && !Double.isNaN(nu.value.value)) {
+						if (vitalSignPhysioIds.containsKey(nu.physio_id.value())) {
+							String outputName = vitalSignPhysioIds.get(nu.physio_id.value());
+							ret.put(outputName, (float) nu.value.value());
+						}
+					}
+				} else if (ava.value instanceof NuObsValueCmp) {
+					nuCmp = (NuObsValueCmp) ava.value;
+					for (int n = 0; n < nuCmp.count.value(); n++) {
+						nu = nuCmp.value.get(n);
+						if (nu != null && nu.value != null && !Double.isNaN(nu.value.value)) {
+							if (vitalSignPhysioIds.containsKey(nu.physio_id.value())) {
+								String outputName = vitalSignPhysioIds.get(nu.physio_id.value());
+								ret.put(outputName, (float) nu.value.value());
+							}
+						}
+					}
+				}
+			}
+			if (!ret.isEmpty()) {
+				ret.put("timestamp", calculateTime(relativeTime));
+			}
+			return ret;
 		}
 
 		void parseWave(boolean bigEndian, long relativeTime) {
@@ -1118,7 +1176,7 @@ public class Models {
 			}
 			int mask = 0xffff >> (saSpec.sample_type.sample_size.value() - saSpec.sample_type.significant_bits.value());
 			int elemCount = saObs.length.value() / step;
-			saObs.calibrated = new char[elemCount];
+			saObs.calibrated = new byte[elemCount];
 			// double absWidth = saCal.upper_absolute_value.value() -
 			// saCal.lower_absolute_value.value();
 			double scaledWidth = saCal != null ? (saCal.upper_scaled_value.value() - saCal.lower_scaled_value.value())
@@ -1134,57 +1192,70 @@ public class Models {
 					tmp = tmp & mask;
 				}
 				// Calibrate
-				char calibratedValue = (char) (tmp >> (saSpec.sample_type.significant_bits.value() - 8));
+				byte calibratedValue = (byte) (tmp >> (saSpec.sample_type.significant_bits.value() - 8));
 				if (saCal != null) {
 					if (tmp < saCal.lower_scaled_value.value())
 						tmp = saCal.lower_scaled_value.value();
 					if (tmp > saCal.upper_scaled_value.value())
 						tmp = saCal.upper_scaled_value.value();
 					if (factor > 0) {
-						calibratedValue = (char) ((tmp - saCal.lower_scaled_value.value()) * factor);
+						calibratedValue = (byte) ((tmp - saCal.lower_scaled_value.value()) * factor);
 					}
 				}
 				saObs.calibrated[i / 2] = calibratedValue;
 				i += step;
-				_originalWaveHistory.add(tmp);
-				_calibrateWaveHistory.add((int) calibratedValue);
+//				_originalWaveHistory.add(tmp);
+//				_calibrateWaveHistory.add((int) calibratedValue);
 			}
 
-			_logger.debug("{PHYSIO_ID : {}, CALIBRATED : {}}", saObs.physio_str, charArrayToHex(saObs.calibrated));
-			
+			// byteArrayToHex(saObs.calibrated)
+			_logger.debug("{PHYSIO_ID : {}, CALIBRATED : {} BYTES}", saObs.physio_str, saObs.calibrated.length);
+
+			if (_physioId2WaveFormSequenceMap.containsKey(saObs.physio_id.value())) {
+				SortedMap<Long, byte[]> waveformSequence = _physioId2WaveFormSequenceMap.get(saObs.physio_id.value());
+				if (waveformSequence.containsKey(relativeTime)) {
+					waveformSequence.put(relativeTime,
+							ArrayUtils.addAll(waveformSequence.get(relativeTime), saObs.calibrated));
+				} else {
+					waveformSequence.put(relativeTime, saObs.calibrated);
+				}
+			} else {
+				_logger.debug("ignoring wave physio_id {}, {}", saObs.physio_id.value(), saObs.physio_str);
+			}
+
 			// 0x0101 I
 			// 0x0102 II
 			// 0x013D III
-			if (saObs.physio_id.value() == 0x0101) {
-				if (_xxxECGIIMap.containsKey(relativeTime)) {
-					_xxxECGIIMap.put(relativeTime, ArrayUtils.addAll(_xxxECGIIMap.get(relativeTime), saObs.calibrated));
-				} else {
-					_xxxECGIIMap.put(relativeTime, saObs.calibrated);
-				}
-
-//				for (int i = 0; i < _originalWaveHistory.size(); i++) {
-//					System.out.print(_originalWaveHistory.get(i) + ",");
+//			if (saObs.physio_id.value() == 0x0101) {
+//				if (_xxxECGIIMap.containsKey(relativeTime)) {
+//					_xxxECGIIMap.put(relativeTime, ArrayUtils.addAll(_xxxECGIIMap.get(relativeTime), saObs.calibrated));
+//				} else {
+//					_xxxECGIIMap.put(relativeTime, saObs.calibrated);
 //				}
-				System.out.println("\n--------------------\n");
-				// System.out.println(_originalWaveHistory.toString());
-				// System.out.println("\n--------------------\n");
-				// System.out.println(_calibrateWaveHistory.toString());
-
-				ArrayList<Integer> xxx = new ArrayList<Integer>();
-				for (Map.Entry<Long, char[]> entry : _xxxECGIIMap.entrySet()) {
-					System.out.println(entry.getKey() + " => " + _sdf.format(calculateTime(entry.getKey())));
-					for (char c : entry.getValue()) {
-						xxx.add((int) c);
-					}
-				}
-				System.out.println(xxx.size());
-				System.out.println(xxx.toString());
-
-				System.out.println("\n--------------------\n");
-//				for (int i = 0; i < _calibrateWaveHistory.size(); i++) {
-//					System.out.print(_calibrateWaveHistory.get(i) + ",");
+//
+//				//for (int i = 0; i < _originalWaveHistory.size(); i++) {
+//				//	System.out.print(_originalWaveHistory.get(i) + ",");
+//				//}
+//				System.out.println("\n--------------------\n");
+//				// System.out.println(_originalWaveHistory.toString());
+//				// System.out.println("\n--------------------\n");
+//				// System.out.println(_calibrateWaveHistory.toString());
+//
+//				ArrayList<Integer> xxx = new ArrayList<Integer>();
+//				for (Map.Entry<Long, char[]> entry : _xxxECGIIMap.entrySet()) {
+//					System.out.println(entry.getKey() + " => " + _sdf.format(calculateTime(entry.getKey())));
+//					for (char c : entry.getValue()) {
+//						xxx.add((int) c);
+//					}
 //				}
-			}
+//				System.out.println(xxx.size());
+//				System.out.println(xxx.toString());
+//
+//				System.out.println("\n--------------------\n");
+//				//for (int i = 0; i < _calibrateWaveHistory.size(); i++) {
+//				//	System.out.print(_calibrateWaveHistory.get(i) + ",");
+//				//}
+//			}
 		}
 	}
 
@@ -1507,6 +1578,48 @@ public class Models {
 		}
 	}
 
+// typedef struct {
+//	 		u_16 poll_number;
+//	 		RelativeTime rel_time_stamp;
+//	 		AbsoluteTime abs_time_stamp;
+//	 		TYPE polled_obj_type;
+//	 		OIDType polled_attr_grp;
+//	 		PollInfoList poll_info_list;
+// } PollMdibDataReply;
+	public static class PollMdibDataReply { // 24+
+		Ushort poll_number = new Ushort();
+		Uint rel_time_stamp = new Uint();
+		AbsoluteTime abs_time_stamp = new AbsoluteTime(); // 8 bytes
+		TYPE polled_obj_type = new TYPE(); // 4 bytes, skip 16 bytes to code
+		Ushort polled_attr_grp = new Ushort();
+		PollInfoList poll_info_list = new PollInfoList(); // 4+length bytes
+		Date _calculatedTimeStamp;
+
+		public void read(InputStream ins, boolean bigEndian) throws IOException {
+			poll_number.read(ins, bigEndian);
+			rel_time_stamp.read(ins, bigEndian);
+			abs_time_stamp.read(ins);
+			polled_obj_type.read(ins, bigEndian);
+			polled_attr_grp.read(ins, bigEndian);
+			poll_info_list.read(ins, bigEndian);
+
+			_calculatedTimeStamp = calculateTime(rel_time_stamp.value());
+			poll_info_list.publishVitalSign(rel_time_stamp.value());
+			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
+			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
+					_sdf.format(calculateTime(rel_time_stamp.value())));
+		}
+
+		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
+			poll_number.write(ous, bigEndian);
+			rel_time_stamp.write(ous, bigEndian);
+			abs_time_stamp.write(ous);
+			polled_obj_type.write(ous, bigEndian);
+			polled_attr_grp.write(ous, bigEndian);
+			poll_info_list.write(ous, bigEndian);
+		}
+	}
+
 //	typedef struct PollMdibDataReplyExt {
 //	    u_16 			poll_number
 //	    u_16 			sequence_no
@@ -1524,6 +1637,7 @@ public class Models {
 		TYPE polled_obj_type = new TYPE(); // 4, skip 18 bytes to code
 		Ushort polled_attr_grp = new Ushort();
 		PollInfoList poll_info_list = new PollInfoList(); // 4+
+		Date _calculatedTimeStamp;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			poll_number.read(ins, bigEndian);
@@ -1534,9 +1648,11 @@ public class Models {
 			polled_attr_grp.read(ins, bigEndian);
 			poll_info_list.read(ins, bigEndian);
 
+			_calculatedTimeStamp = calculateTime(rel_time_stamp.value());
+			poll_info_list.publishVitalSign(rel_time_stamp.value());
 			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
 			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
-					_sdf.format(calculateTime(rel_time_stamp.value())));
+					_sdf.format(_calculatedTimeStamp));
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1893,7 +2009,7 @@ public class Models {
 		Ushort length = new Ushort();
 		byte[] value;
 		String physio_str;
-		char[] calibrated;
+		byte[] calibrated;
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
 			physio_id.read(ins, bigEndian);
@@ -1914,7 +2030,8 @@ public class Models {
 
 		public String toString() {
 			return "{" + (physio_str != null ? physio_str : "NULL") + ":" + value.length + " BYTES, state: 0x"
-					+ Integer.toHexString(state.value()) + ", value: " + byteArrayToHex(value) + "}";
+					+ Integer.toHexString(state.value()) + "}";
+			// + ", value: " + byteArrayToHex(value)
 		}
 	}
 
@@ -1989,5 +2106,104 @@ public class Models {
 		Calendar calendar = Calendar.getInstance();
 		calendar.setTimeInMillis(_baseAbsoluteTime.getTime() + millis);
 		return calendar.getTime();
+	}
+
+	public static byte[] sampling64(byte[] src) {
+		if (src.length < 64)
+			return src;
+		int step = src.length / 64;
+		byte[] dest = new byte[64];
+		for (int i = 0; i < 64; i++) {
+			dest[i] = src[i * step];
+		}
+		return dest;
+	}
+
+	static class TimeSequenceWorker extends Thread {
+		public void run() {
+			while (!Thread.currentThread().isInterrupted()) {
+//				long now = new Date().getTime();
+				for (int physioId : _physioId2WaveFormSequenceMap.keySet()) {
+					SortedMap<Long, byte[]> timeSeq = _physioId2WaveFormSequenceMap.get(physioId);
+					ArrayList<Long> removeKeys = new ArrayList<Long>();
+					Set<Long> timeSeqKeys = timeSeq.keySet();
+					Long timeSeqKeyArray[] = timeSeqKeys.toArray(new Long[0]);
+					SortedMap<Long, Long[]> sameSecondMap = new TreeMap<Long, Long[]>();
+					for (int i = 0; i < timeSeqKeyArray.length; i++) {
+						long key = timeSeqKeyArray[i];
+						Date ktm = calculateTime(key);
+						long sameSecond = ktm.getTime() / 1000 * 1000;
+						if (sameSecondMap.containsKey(sameSecond)) {
+							sameSecondMap.put(sameSecond,
+									ArrayUtils.addAll(sameSecondMap.get(sameSecond), new Long[] { key }));
+						} else {
+							sameSecondMap.put(sameSecond, new Long[] { key });
+						}
+					}
+//					for (long sameSecond : sameSecondMap.keySet()) {
+//						_logger.debug("1. SameSecond {} has {}", sameSecond, Arrays.asList(sameSecondMap.get(sameSecond)));
+//					}
+					long maxRemovedSameSecond = 0;
+					for (long sameSecond : sameSecondMap.keySet()) {
+						Long timeSeqKeysInSameSecond[] = sameSecondMap.get(sameSecond);
+						if (timeSeqKeysInSameSecond.length > 3) {
+							maxRemovedSameSecond = sameSecond;
+							String physioName = WavePhysioIds.get(physioId);
+							_logger.debug("{} SameSecond {} has {}", physioName, sameSecond,
+									Arrays.asList(timeSeqKeysInSameSecond));
+							byte[] combinedValues = new byte[0];
+							for (long timeSeqKey : timeSeqKeysInSameSecond) {
+								byte originValues[] = timeSeq.get(timeSeqKey);
+								_logger.debug("combining {}, {} BYTES to 64", physioName, originValues.length);
+								byte samplingValues64[] = sampling64(originValues);
+								combinedValues = ArrayUtils.addAll(combinedValues, samplingValues64);
+								removeKeys.add(timeSeqKey);
+							}
+							_logger.debug("combined {}, {} BYTES", physioName, combinedValues.length);
+							if (combinedValues.length > 0) {
+								JSONObject json = new JSONObject();
+								json.put(physioName, combinedValues);
+								json.put("timestamp", sameSecond);
+
+								MqttPublisher.addMessage(json.toString());
+							}
+						}
+					}
+					// remove old data
+					for (long sameSecond : sameSecondMap.keySet()) {
+						if (sameSecond < maxRemovedSameSecond) {
+							Long timeSeqKeysInSameSecond[] = sameSecondMap.get(sameSecond);
+							for (long timeSeqKey : timeSeqKeysInSameSecond) {
+								removeKeys.add(timeSeqKey);
+							}
+						}
+					}
+//					for (int i = 0; i < timeSeqKeyArray.length; i++) {
+//						long key = timeSeqKeyArray[i];
+//						Date ktm = calculateTime(key);
+//						if (now - ktm.getTime() > 1000) {
+//							long sameSecond = ktm.getTime() / 1000 * 1000;
+//							String physioName = WavePhysioIds.get(physioId);
+//							JSONObject json = new JSONObject();
+//							json.put(physioName, timeSeq.get(key));
+//							json.put("timestamp", ktm.getTime());
+//							removeKeys.add(key);
+//							MqttPublisher.addMessage(json.toString());
+//						}
+//					}
+					for (long key : removeKeys) {
+						if (timeSeq.containsKey(key))
+							timeSeq.remove(key);
+					}
+				}
+
+				try {
+					Thread.sleep(500);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+					break;
+				}
+			}
+		}
 	}
 }
