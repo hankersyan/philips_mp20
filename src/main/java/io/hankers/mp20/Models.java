@@ -1025,16 +1025,23 @@ public class Models {
 		public void publishVitalSign(long relativeTime) {
 			if (count.value() < 1)
 				return;
+			JSONObject json = new JSONObject();
 			for (int i = 0; i < value.size(); i++) {
 				SingleContextPoll scp = value.get(i);
 				if (scp.poll_info.value != null) {
 					for (int m = 0; m < scp.poll_info.value.size(); m++) {
-						JSONObject json = scp.poll_info.value.get(m).parseVitalSign(relativeTime);
-						if (json != null && !json.isEmpty()) {
-							MqttPublisher.addMessage(json.toString());
+						Map<String, Float> vsValues = scp.poll_info.value.get(m).parseVitalSign(relativeTime);
+						if (vsValues != null && !vsValues.isEmpty()) {
+							for (String key : vsValues.keySet()) {
+								json.put(key, vsValues.get(key));
+							}
 						}
 					}
 				}
+			}
+			if (!json.isEmpty()) {
+				json.put("timestamp", calculateTime(relativeTime).getTime());
+				MqttPublisher.addMessage(json.toString());
 			}
 		}
 	}
@@ -1057,11 +1064,11 @@ public class Models {
 			attributes.write(ous, bigEndian);
 		}
 
-		JSONObject parseVitalSign(long relativeTime) {
+		Map<String, Float> parseVitalSign(long relativeTime) {
 			if (attributes.count.value() < 1) {
 				return null;
 			}
-			JSONObject ret = new JSONObject();
+			Map<String, Float> ret = new HashMap<String, Float>();
 			for (int i = 0; i < attributes.value.size(); i++) {
 				AVAType ava = attributes.value.get(i);
 				NuObsValue nu;
@@ -1086,9 +1093,6 @@ public class Models {
 						}
 					}
 				}
-			}
-			if (!ret.isEmpty()) {
-				ret.put("timestamp", calculateTime(relativeTime));
 			}
 			return ret;
 		}
@@ -2108,13 +2112,13 @@ public class Models {
 		return calendar.getTime();
 	}
 
-	public static byte[] sampling64(byte[] src) {
-		if (src.length < 64)
-			return src;
-		int step = src.length / 64;
-		byte[] dest = new byte[64];
-		for (int i = 0; i < 64; i++) {
-			dest[i] = src[i * step];
+	public static short[] resampling(byte[] src) {
+		int SAMPLE_RATE = 32;
+		double step = src.length * 1.0 / SAMPLE_RATE;
+		short[] dest = new short[SAMPLE_RATE];
+		for (int i = 0; i < SAMPLE_RATE; i++) {
+			int idx = (int) (i * step);
+			dest[i] = (short) (src[idx] & 0xFF); // to unsigned
 		}
 		return dest;
 	}
@@ -2151,11 +2155,12 @@ public class Models {
 							String physioName = WavePhysioIds.get(physioId);
 							_logger.debug("{} SameSecond {} has {}", physioName, sameSecond,
 									Arrays.asList(timeSeqKeysInSameSecond));
-							byte[] combinedValues = new byte[0];
+							short[] combinedValues = new short[0];
 							for (long timeSeqKey : timeSeqKeysInSameSecond) {
 								byte originValues[] = timeSeq.get(timeSeqKey);
-								_logger.debug("combining {}, {} BYTES to 64", physioName, originValues.length);
-								byte samplingValues64[] = sampling64(originValues);
+								short samplingValues64[] = resampling(originValues);
+								_logger.debug("combining {}, {} BYTES to {}", physioName, originValues.length,
+										samplingValues64.length);
 								combinedValues = ArrayUtils.addAll(combinedValues, samplingValues64);
 								removeKeys.add(timeSeqKey);
 							}
