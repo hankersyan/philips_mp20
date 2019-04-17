@@ -14,16 +14,16 @@ import org.fusesource.mqtt.client.QoS;
 
 public class MqttPublisher {
 
-	static String user = "client01";// env("ACTIVEMQ_USER", "admin");
-	static String password = "password";// env("ACTIVEMQ_PASSWORD", "password");
-	static String host = "iot.meehealth.com";// env("ACTIVEMQ_HOST", "localhost");
-	static int port = 1883;// Integer.parseInt(env("ACTIVEMQ_PORT", "1883"));
+	static String user;// = "client01";// env("ACTIVEMQ_USER", "admin");
+	static String password;// = "password";// env("ACTIVEMQ_PASSWORD", "password");
+	static String host;// = "iot.meehealth.com";// env("ACTIVEMQ_HOST", "localhost");
+	static int port;// = 1883;// Integer.parseInt(env("ACTIVEMQ_PORT", "1883"));
 
-	static final String destination = "test/topic";// arg(args, 0, "/topic/event");
-	static final UTF8Buffer TOPIC = new UTF8Buffer(destination);
+	//static final String destination;// = "test/topic";// arg(args, 0, "/topic/event");
+	static UTF8Buffer TOPIC;// = new UTF8Buffer(destination);
 
 	// queue limit
-	static final int LIMIT = 10000;
+	static int LIMIT = 10000;
 	static final Logger _logger = LogManager.getLogger(MqttPublisher.class.getName());
 	static MQTT _mqtt;
 	static FutureConnection _connection;
@@ -35,6 +35,13 @@ public class MqttPublisher {
 	}
 
 	private static void init() {
+		user = App._mqttUser;
+		password = App._mqttPassword;
+		host = App._mqttHost;
+		port = Integer.valueOf(App._mqttPort, 1883);
+		TOPIC = new UTF8Buffer(App._mqttTopic);
+		LIMIT = Integer.valueOf(App._mqttQueueLimit, 10000);
+		
 		_mqtt = new MQTT();
 		while (true) {
 			try {

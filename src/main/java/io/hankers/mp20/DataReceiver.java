@@ -38,7 +38,7 @@ public class DataReceiver extends Thread {
 
 	public DataReceiver() throws SocketException, UnknownHostException {
 		_socket = new DatagramSocket();
-		ADDR = InetAddress.getByName("127.0.0.1");
+		ADDR = InetAddress.getByName(App._monitorIp);
 	}
 
 	public void run() {
