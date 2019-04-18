@@ -1,4 +1,4 @@
-package io.hankers.mp20;
+package io.hankers.mdi.philips.mp20;
 
 import junit.framework.Test;
 import junit.framework.TestCase;

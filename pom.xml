@@ -3,9 +3,9 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>io.hankers</groupId>
+	<groupId>io.hankers.mdi.philips</groupId>
 	<artifactId>mp20</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0</version>
 	<packaging>jar</packaging>
 
 	<name>mp20</name>
@@ -23,24 +23,9 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.fusesource.mqtt-client</groupId>
-			<artifactId>mqtt-client</artifactId>
-			<version>1.14</version>
-		</dependency>
-		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
 			<version>3.8.1</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-core</artifactId>
-			<version>2.11.1</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.logging.log4j</groupId>
-			<artifactId>log4j-api</artifactId>
-			<version>2.11.1</version>
 		</dependency>
 		<dependency>
 			<groupId>org.json</groupId>

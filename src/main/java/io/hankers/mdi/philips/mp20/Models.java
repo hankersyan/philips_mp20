@@ -1,4 +1,4 @@
-package io.hankers.mp20;
+package io.hankers.mdi.philips.mp20;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataOutputStream;
@@ -20,16 +20,13 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.json.JSONObject;
 
-import io.hankers.mp20.DataConstants.AttributeIDs;
+import io.hankers.mdi.mdi_utils.MDILog;
+import io.hankers.mdi.mdi_utils.MqttPublisher;
+import io.hankers.mdi.philips.mp20.DataConstants.AttributeIDs;
 
 public class Models {
-
-	static final Logger _logger = LogManager.getLogger(Models.class.getName());
-
 	// observation handle to SaSpec
 	static Map<Integer, SaSpec> _objHandle2SaSpecMap = new HashMap<Integer, SaSpec>();
 	// physio_id to SaCalData16
@@ -267,7 +264,7 @@ public class Models {
 			} else {
 				value = Double.NaN;
 			}
-			_logger.trace("Float32,{},{},{},{},{}={}", h, mh.value(), ml.value(), l.value(), mantissa, value);
+			MDILog.d("Float32," + h +","+ mh.value() +","+  ml.value() +","+  l.value() +","+  mantissa +","+ value);
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -483,7 +480,7 @@ public class Models {
 
 			value = convertToAttributeValue(buf, bigEndian);
 			AttributeIDs attrId = DataConstants.AttributeIDs.GetValue(attribute_id.value());
-			_logger.debug("AVA={},\t\t{}", attrId != null ? attrId.name() : attribute_id.value(), value);
+MDILog.d("AVA={},\t\t{}", attrId != null ? attrId.name() : attribute_id.value(), value);
 		}
 
 		public Object getValue() {
@@ -680,7 +677,7 @@ public class Models {
 						Integer.parseInt(Integer.toHexString(minute), 10),
 						Integer.parseInt(Integer.toHexString(second), 10));
 				date = c.getTime();
-				_logger.debug("AbsoluteTime={}", _sdf.format(date));
+				MDILog.d("AbsoluteTime=" + _sdf.format(date));
 			}
 		}
 
@@ -823,7 +820,7 @@ public class Models {
 								.order(bigEndian ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN).getInt();
 						_baseRelativeTime = relativeTime;
 					} else {
-						_logger.warn("ERROR: invalid relative tiime");
+						MDILog.w("ERROR: invalid relative tiime");
 					}
 				}
 			}
@@ -1120,7 +1117,7 @@ public class Models {
 				}
 			}
 			if (saSpec != null || saCal != null) {
-				_logger.debug("ObservationPoll, obj_handle={}, physio_id={}, saSpec={}, saCal={}", obj_handle.value(),
+				MDILog.d("ObservationPoll, obj_handle={}, physio_id={}, saSpec={}, saCal={}", obj_handle.value(),
 						physio_id, saSpec != null ? saSpec : "NULL", saCal != null ? saCal : "NULL");
 				if (saSpec != null) {
 					_objHandle2SaSpecMap.put(obj_handle.value(), saSpec);
@@ -1170,13 +1167,13 @@ public class Models {
 			}
 			// Calculate
 			if (saSpec == null) {
-				_logger.warn("No SaSpec for {}", saObs.physio_str);
+				MDILog.w("No SaSpec for {}", saObs.physio_str);
 				return;
 			}
 			int flags = saSpec.flags.value();
 			int step = saSpec.sample_type.sample_size.value() / 8; // always 2
 			if (step != 2) {
-				_logger.error("**** {} sample_size is {} ****", saObs.physio_str, step);
+				MDILog.e("**** {} sample_size is {} ****", saObs.physio_str, step);
 			}
 			int mask = 0xffff >> (saSpec.sample_type.sample_size.value() - saSpec.sample_type.significant_bits.value());
 			int elemCount = saObs.length.value() / step;
@@ -1187,7 +1184,7 @@ public class Models {
 					: 0;
 			double factor = scaledWidth > 0 ? 255.0 / scaledWidth : 0;
 			if (saCal == null) {
-				_logger.info("No SaCalData16 for {}", saObs.physio_str);
+				MDILog.i("No SaCalData16 for {}", saObs.physio_str);
 			}
 			for (int i = 0; i < saObs.value.length;) {
 				int tmp = ByteBuffer.wrap(saObs.value, i, step)
@@ -1213,7 +1210,7 @@ public class Models {
 			}
 
 			// byteArrayToHex(saObs.calibrated)
-			_logger.debug("{PHYSIO_ID : {}, CALIBRATED : {} BYTES}", saObs.physio_str, saObs.calibrated.length);
+			MDILog.d("{PHYSIO_ID : {}, CALIBRATED : {} BYTES}", saObs.physio_str, saObs.calibrated.length);
 
 			if (_physioId2WaveFormSequenceMap.containsKey(saObs.physio_id.value())) {
 				SortedMap<Long, byte[]> waveformSequence = _physioId2WaveFormSequenceMap.get(saObs.physio_id.value());
@@ -1224,7 +1221,7 @@ public class Models {
 					waveformSequence.put(relativeTime, saObs.calibrated);
 				}
 			} else {
-				_logger.debug("ignoring wave physio_id {}, {}", saObs.physio_id.value(), saObs.physio_str);
+				MDILog.d("ignoring wave physio_id {}, {}", saObs.physio_id.value(), saObs.physio_str);
 			}
 
 			// 0x0101 I
@@ -1510,13 +1507,13 @@ public class Models {
 		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			_logger.debug("Start to parse MDSPollActionResult");
+			MDILog.d("Start to parse MDSPollActionResult");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rorsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReply.read(ins, bigEndian);
-			_logger.debug("End to parse MDSPollActionResult");
+			MDILog.d("End to parse MDSPollActionResult");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1550,13 +1547,13 @@ public class Models {
 		private PollMdibDataReply pollMdibDataReply = new PollMdibDataReply(); // 24+, skip 16 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			_logger.debug("Start to parse MDSPollActionResultLinked");
+			MDILog.d("Start to parse MDSPollActionResultLinked");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rolrsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReply.read(ins, bigEndian);
-			_logger.debug("End to parse MDSPollActionResultLinked");
+			MDILog.d("End to parse MDSPollActionResultLinked");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1610,7 +1607,7 @@ public class Models {
 			_calculatedTimeStamp = calculateTime(rel_time_stamp.value());
 			poll_info_list.publishVitalSign(rel_time_stamp.value());
 			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
-			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
+			MDILog.d("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
 					_sdf.format(calculateTime(rel_time_stamp.value())));
 		}
 
@@ -1655,7 +1652,7 @@ public class Models {
 			_calculatedTimeStamp = calculateTime(rel_time_stamp.value());
 			poll_info_list.publishVitalSign(rel_time_stamp.value());
 			poll_info_list.parseWave(bigEndian, rel_time_stamp.value());
-			_logger.debug("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
+			MDILog.d("AbsoluteTime={}, RelativeTime={}", abs_time_stamp.getDateStr(),
 					_sdf.format(_calculatedTimeStamp));
 		}
 
@@ -1687,13 +1684,13 @@ public class Models {
 		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			_logger.debug("Start to parse MDSPollActionResultExt");
+			MDILog.d("Start to parse MDSPollActionResultExt");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rorsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReplyExt.read(ins, bigEndian);
-			_logger.debug("End to parse MDSPollActionResultExt");
+			MDILog.d("End to parse MDSPollActionResultExt");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -1727,13 +1724,13 @@ public class Models {
 		private PollMdibDataReplyExt pollMdibDataReplyExt = new PollMdibDataReplyExt(); // 26+, skip 18 bytes to code
 
 		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			_logger.debug("Start to parse MDSPollActionResultExtLinked");
+			MDILog.d("Start to parse MDSPollActionResultExtLinked");
 			sppdu.read(ins, bigEndian);
 			roapdus.read(ins, bigEndian);
 			rolrsapdu.read(ins, bigEndian);
 			actionResult.read(ins, bigEndian);
 			pollMdibDataReplyExt.read(ins, bigEndian);
-			_logger.debug("End to parse MDSPollActionResultExtLinked");
+			MDILog.d("End to parse MDSPollActionResultExtLinked");
 		}
 
 		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
@@ -2153,18 +2150,18 @@ public class Models {
 						if (timeSeqKeysInSameSecond.length > 3) {
 							maxRemovedSameSecond = sameSecond;
 							String physioName = WavePhysioIds.get(physioId);
-							_logger.debug("{} SameSecond {} has {}", physioName, sameSecond,
+							MDILog.d("{} SameSecond {} has {}", physioName, sameSecond,
 									Arrays.asList(timeSeqKeysInSameSecond));
 							short[] combinedValues = new short[0];
 							for (long timeSeqKey : timeSeqKeysInSameSecond) {
 								byte originValues[] = timeSeq.get(timeSeqKey);
 								short samplingValues64[] = resampling(originValues);
-								_logger.debug("combining {}, {} BYTES to {}", physioName, originValues.length,
+								MDILog.d("combining {}, {} BYTES to {}", physioName, originValues.length,
 										samplingValues64.length);
 								combinedValues = ArrayUtils.addAll(combinedValues, samplingValues64);
 								removeKeys.add(timeSeqKey);
 							}
-							_logger.debug("combined {}, {} BYTES", physioName, combinedValues.length);
+							MDILog.d("combined {}, {} BYTES", physioName, combinedValues.length);
 							if (combinedValues.length > 0) {
 								JSONObject json = new JSONObject();
 								json.put(physioName, combinedValues);

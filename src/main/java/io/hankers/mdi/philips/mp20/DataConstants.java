@@ -1,4 +1,4 @@
-package io.hankers.mp20;
+package io.hankers.mdi.philips.mp20;
 
 public class DataConstants {
 	// private static final byte DataExportID = 0x11;

@@ -1,4 +1,4 @@
-package io.hankers.mp20;
+package io.hankers.mdi.philips.mp20;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -14,16 +14,16 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
-import io.hankers.mp20.Models.AVAType;
-import io.hankers.mp20.Models.MDSPollActionResult;
-import io.hankers.mp20.Models.MDSPollActionResultExt;
-import io.hankers.mp20.Models.MDSPollActionResultExtLinked;
-import io.hankers.mp20.Models.MDSPollActionResultLinked;
-import io.hankers.mp20.Models.ROIVapdu;
-import io.hankers.mp20.Models.ROapdus;
+import io.hankers.mdi.mdi_utils.MDIConfig;
+import io.hankers.mdi.mdi_utils.MDILog;
+import io.hankers.mdi.philips.mp20.Models.AVAType;
+import io.hankers.mdi.philips.mp20.Models.MDSPollActionResult;
+import io.hankers.mdi.philips.mp20.Models.MDSPollActionResultExt;
+import io.hankers.mdi.philips.mp20.Models.MDSPollActionResultExtLinked;
+import io.hankers.mdi.philips.mp20.Models.MDSPollActionResultLinked;
+import io.hankers.mdi.philips.mp20.Models.ROIVapdu;
+import io.hankers.mdi.philips.mp20.Models.ROapdus;
 
 public class DataReceiver extends Thread {
 	private DatagramSocket _socket;
@@ -34,11 +34,10 @@ public class DataReceiver extends Thread {
 	private SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSz");
 	private Thread _pollThread;
 	private boolean _bigEndian = true;
-	static final Logger _logger = LogManager.getLogger(DataReceiver.class.getName());
 
 	public DataReceiver() throws SocketException, UnknownHostException {
 		_socket = new DatagramSocket();
-		ADDR = InetAddress.getByName(App._monitorIp);
+		ADDR = InetAddress.getByName(MDIConfig.getMonitorIp());
 	}
 
 	public void run() {
@@ -59,12 +58,10 @@ public class DataReceiver extends Thread {
 				} catch (IOException e) {
 					succeedToAssociate = false;
 					Thread.sleep(3000);
-					e.printStackTrace();
-					_logger.error(e);
+					MDILog.e(e);
 				}
 			} catch (InterruptedException e) {
-				e.printStackTrace();
-				_logger.error(e);
+				MDILog.e(e);
 				break;
 			}
 		}
@@ -84,13 +81,13 @@ public class DataReceiver extends Thread {
 		DatagramPacket receivePacket = new DatagramPacket(_buf, _buf.length);
 		_socket.receive(receivePacket);
 		String receivedSentence = new String(receivePacket.getData());
-		_logger.debug("AssociationResult FROM SERVER:" + receivedSentence);
+		MDILog.d("AssociationResult FROM SERVER:" + receivedSentence);
 
 		java.util.Arrays.fill(_buf, (byte) 0);
 
 		_socket.receive(receivePacket);
 		receivedSentence = new String(receivePacket.getData());
-		_logger.debug("MDSCreateEventReport FROM SERVER:" + receivedSentence);
+		MDILog.d("MDSCreateEventReport FROM SERVER:" + receivedSentence);
 
 		Models.MDSCreateEventReport mdsCreateEventReport = new Models.MDSCreateEventReport();
 		InputStream ins = new ByteArrayInputStream(_buf, 0, receivePacket.getLength());
@@ -99,9 +96,9 @@ public class DataReceiver extends Thread {
 
 		_absoluteTime = mdsCreateEventReport.getAbsoluteTime();
 		long relativeTime = mdsCreateEventReport.getRelativeTime();
-		_logger.debug("MDS Date,abs={},rel={}", _sdf.format(_absoluteTime.getDate()), relativeTime);
+		MDILog.d("MDS Date,abs={},rel={}", _sdf.format(_absoluteTime.getDate()), relativeTime);
 
-		_logger.debug(">>SendMDSCreateEventResult");
+		MDILog.d(">>SendMDSCreateEventResult");
 		sendData = DataConstants.mds_create_resp_msg;
 		sendPacket = new DatagramPacket(sendData, sendData.length);
 		_socket.send(sendPacket);
@@ -142,11 +139,10 @@ public class DataReceiver extends Thread {
 
 					Thread.sleep(1000);
 				} catch (IOException e) {
-					e.printStackTrace();
-					_logger.error(e);
+
+					MDILog.e(e);
 				} catch (InterruptedException e2) {
-					e2.printStackTrace();
-					_logger.error(e2);
+					MDILog.e(e2);
 				}
 			}
 		}
@@ -168,8 +164,7 @@ public class DataReceiver extends Thread {
 					Arrays.fill(_buf, (byte) 0);
 					_socket.receive(_revPacket);
 				} catch (IOException e) {
-					e.printStackTrace();
-					_logger.error(e);
+					MDILog.e(e);
 				}
 			}
 		}
@@ -375,7 +370,7 @@ public class DataReceiver extends Thread {
 			MDSPollActionResultExtLinked resultEx = new MDSPollActionResultExtLinked();
 			resultEx.read(ins, _bigEndian);
 		} else {
-			_logger.debug("Process other type packet");
+			MDILog.d("Process other type packet");
 		}
 		ins.close();
 	}

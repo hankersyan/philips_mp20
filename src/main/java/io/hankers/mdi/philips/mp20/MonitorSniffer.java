@@ -1,4 +1,4 @@
-package io.hankers.mp20;
+package io.hankers.mdi.philips.mp20;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -8,7 +8,8 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 
-import io.hankers.mp20.Models.ConnectIndication;
+import io.hankers.mdi.mdi_utils.MDILog;
+import io.hankers.mdi.philips.mp20.Models.ConnectIndication;
 
 public class MonitorSniffer extends Thread {
     private DatagramSocket socket;
@@ -42,8 +43,7 @@ public class MonitorSniffer extends Thread {
 	            
 	            socket.send(packet);
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+				MDILog.d("Sniffering", e);
 			}
         }
         socket.close();
