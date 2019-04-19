@@ -71,6 +71,7 @@ public class Models {
 			put(0x4822, "PULSE_RATE"); // NOM_PRESS_BLD_NONINV_PULS_RATE
 			put(0x4BB0, "PERFUSION_INDICATOR"); // NOM_PULS_OXIM_PERF_REL
 			put(0x4182, "HEART_BEAT"); // NOM_ECG_CARD_BEAT_RATE
+			put(0xF0C7, "TEMP"); // NOM_TEMP_GEN_1
 		}
 	};
 
