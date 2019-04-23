@@ -23,6 +23,9 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.json.JSONObject;
 
 import io.hankers.mdi.mdi_utils.MDILog;
+import io.hankers.mdi.mdi_utils.Models.Ubyte;
+import io.hankers.mdi.mdi_utils.Models.Uint;
+import io.hankers.mdi.mdi_utils.Models.Ushort;
 import io.hankers.mdi.mdi_utils.MqttPublisher;
 import io.hankers.mdi.philips.mp20.DataConstants.AttributeIDs;
 
@@ -103,100 +106,6 @@ public class Models {
 		}
 
 		new TimeSequenceWorker().start();
-	}
-
-	public static class Ubyte {
-		private char c;
-
-		public int value() {
-			return c;// Byte.toUnsignedInt(b);
-		}
-
-		public void setValue(int i) {
-			c = (char) (i & 0xFF);
-		}
-
-		public void read(InputStream ins) throws IOException {
-			c = (char) ins.read();
-		}
-
-		public void write(DataOutputStream ous) throws IOException {
-			ous.writeByte(c);
-		}
-	}
-
-	public static class Ushort {
-		private byte l;
-		private byte h;
-
-		public int value() {
-			return (Byte.toUnsignedInt(h) << 8) + Byte.toUnsignedInt(l);
-		}
-
-		public void setValue(int i) {
-			l = (byte) (i & 0xFF);
-			h = (byte) (i >> 8 & 0xFF);
-		}
-
-		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			if (bigEndian) {
-				h = (byte) ins.read();
-				l = (byte) ins.read();
-			} else {
-				l = (byte) ins.read();
-				h = (byte) ins.read();
-			}
-		}
-
-		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
-			if (bigEndian) {
-				ous.writeByte(h);
-				ous.writeByte(l);
-			} else {
-				ous.writeByte(l);
-				ous.writeByte(h);
-			}
-		}
-	}
-
-	public static class Uint {
-		private byte l;
-		private byte ml;
-		private byte mh;
-		private byte h;
-
-		public long value() {
-			return (Byte.toUnsignedLong(h) << 24) + (Byte.toUnsignedLong(mh) << 16) + (Byte.toUnsignedLong(ml) << 8)
-					+ Byte.toUnsignedLong(l);
-		}
-
-		public void read(InputStream ins, boolean bigEndian) throws IOException {
-			if (bigEndian) {
-				h = (byte) ins.read();
-				mh = (byte) ins.read();
-				ml = (byte) ins.read();
-				l = (byte) ins.read();
-			} else {
-				l = (byte) ins.read();
-				ml = (byte) ins.read();
-				mh = (byte) ins.read();
-				h = (byte) ins.read();
-			}
-		}
-
-		public void write(DataOutputStream ous, boolean bigEndian) throws IOException {
-			if (bigEndian) {
-				ous.writeByte(h);
-				ous.writeByte(mh);
-				ous.writeByte(ml);
-				ous.writeByte(l);
-			} else {
-				ous.writeByte(l);
-				ous.writeByte(ml);
-				ous.writeByte(mh);
-				ous.writeByte(h);
-			}
-		}
 	}
 
 	public static class Float32 {
