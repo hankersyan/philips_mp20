@@ -66,14 +66,14 @@ public class Models {
 	@SuppressWarnings("serial")
 	static Map<Integer, String> vitalSignPhysioIds = new HashMap<Integer, String>() {
 		{
-			put(0x4A05, "NBP_SYS"); // NOM_PRESS_BLD_NONINV_SYS
-			put(0x4A06, "NBP_DIA"); // NOM_PRESS_BLD_NONINV_DIA
-			put(0x4A07, "NBP_MEAN"); // NOM_PRESS_BLD_NONINV_MEAN
-			put(0x500A, "RESP_RATE"); // NOM_RESP_RATE
+			put(0x4A05, "NBPS"); // NOM_PRESS_BLD_NONINV_SYS
+			put(0x4A06, "NBPD"); // NOM_PRESS_BLD_NONINV_DIA
+			put(0x4A07, "NBPM"); // NOM_PRESS_BLD_NONINV_MEAN
+			put(0x500A, "RESP"); // NOM_RESP_RATE
 			put(0x4BB8, "SPO2"); // NOM_PULS_OXIM_SAT_O2
-			put(0x4822, "PULSE_RATE"); // NOM_PRESS_BLD_NONINV_PULS_RATE
+			put(0x4822, "PULSE"); // NOM_PRESS_BLD_NONINV_PULS_RATE
 			put(0x4BB0, "PERFUSION_INDICATOR"); // NOM_PULS_OXIM_PERF_REL
-			put(0x4182, "HEART_BEAT"); // NOM_ECG_CARD_BEAT_RATE
+			put(0x4182, "HR"); // NOM_ECG_CARD_BEAT_RATE
 			put(0xF0C7, "TEMP"); // NOM_TEMP_GEN_1
 		}
 	};
