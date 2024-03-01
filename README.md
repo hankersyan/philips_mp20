@@ -1,7 +1,7 @@
 # MP20
 
 #### Description
-Communication Interface of philips intellivue MP series
+This data capture acts as client for philips intellivue MP series
 
 #### Software Architecture
 java eclipse maven
