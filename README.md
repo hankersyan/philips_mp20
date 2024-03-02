@@ -1,4 +1,4 @@
-# MP20
+# Philips MP20 Data Capture
 
 #### Description
 This data capture acts as client for philips intellivue MP series
